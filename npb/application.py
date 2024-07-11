@@ -1,6 +1,7 @@
 import asyncio
 import traceback
 from datetime import datetime, timedelta
+from os import environ
 from typing import Callable, Dict, Any, Awaitable
 
 from aiogram.enums import ParseMode
@@ -117,7 +118,8 @@ def create_app() -> FastAPI:
             logger = get_logger()
             logger.info("web_app_startup")
             # mapper_registry.map_imperatively()
-            alembic_config = AlembicConfig("../alembic.ini")
+            alembic_config = AlembicConfig(environ.get("ALEMBIC_SCRIPT_PATH"))
+            alembic_config.set_main_option("script_location", environ.get("ALEMBIC_SCRIPT_LOCATION"))
             alembic_config.set_main_option("sqlalchemy.url", Config.DB_DSN)
             command.upgrade(alembic_config, "head")
             logger.info('apply "alembic upgrade head"')
