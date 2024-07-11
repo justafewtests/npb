@@ -4,7 +4,7 @@ from alembic import context
 from sqlalchemy import create_engine
 from sqlalchemy import pool
 
-from nbp.config import Config as ProjectConfig
+from npb.config import Config as ProjectConfig
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

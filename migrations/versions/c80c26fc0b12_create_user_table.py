@@ -12,7 +12,7 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
 
-from nbp.config import CommonConstants
+from npb.config import CommonConstants
 
 # revision identifiers, used by Alembic.
 revision: str = 'c80c26fc0b12'
