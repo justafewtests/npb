@@ -1,7 +1,11 @@
 from os import environ
 
 from aiogram.types import InlineKeyboardButton
+from dotenv import load_dotenv
 from sqlalchemy import text
+
+
+load_dotenv()
 
 
 class Config:
@@ -10,12 +14,10 @@ class Config:
     SERVICE_PORT = int(environ.get("SERVICE_PORT", "8000"))
     SERVICE_WORKERS = int(environ.get("SERVICE_WORKERS", "1"))
     TELEGRAM_WEBHOOK_HOST = environ.get("TELEGRAM_WEBHOOK_HOST")
-    TELEGRAM_WEBHOOK_PORT = environ.get("TELEGRAM_WEBHOOK_PORT", 443)
+    TELEGRAM_WEBHOOK_PORT = int(environ.get("TELEGRAM_WEBHOOK_PORT", "443"))
     TELEGRAM_WEBHOOK_PATH = "/webhook"
-    # TELEGRAM_WEBHOOK_URL = f"https://{TELEGRAM_WEBHOOK_HOST}:{TELEGRAM_WEBHOOK_PORT}{TELEGRAM_WEBHOOK_PATH}"
-    TELEGRAM_WEBHOOK_URL = "https://fd05-178-91-106-8.ngrok-free.app/webhook"
-    # DB_DSN = environ.get("POSTGRES_DSN")
-    DB_DSN = "postgresql+asyncpg://test_user:test_pass@localhost/nbp"
+    TELEGRAM_WEBHOOK_URL = f"https://{TELEGRAM_WEBHOOK_HOST}:{TELEGRAM_WEBHOOK_PORT}{TELEGRAM_WEBHOOK_PATH}"
+    DB_DSN = environ.get("POSTGRES_DSN")
     MASTER_SERVICES = {
         "Ресницы": ["Удлинение", "Наращивание", "Ламинирование", "Биозавивка", "Коррекция", "Окрашивание"],
         "Маникюр": ["Наращивание", "Шеллак", "Кутикулы", "Классический маникюр", "Европейский маникюр",
