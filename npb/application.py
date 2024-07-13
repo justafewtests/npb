@@ -6,7 +6,7 @@ from typing import Callable, Dict, Any, Awaitable
 
 from aiogram.enums import ParseMode
 from alembic.config import Config as AlembicConfig
-from aiogram.types import ErrorEvent, BotCommand, Update, User as AiogramUser
+from aiogram.types import ErrorEvent, BotCommand, Update, User as AiogramUser, InputFile, FSInputFile
 from alembic import command
 from fastapi import FastAPI
 
@@ -128,9 +128,13 @@ def create_app() -> FastAPI:
         if webhook.url != Config.TELEGRAM_WEBHOOK_URL:
             if not webhook.url:
                 await bot.delete_webhook()
-            await bot.set_webhook(Config.TELEGRAM_WEBHOOK_URL)
-            logger.info("telegram webhook set")
-        await bot.set_webhook(Config.TELEGRAM_WEBHOOK_URL)
+            environment = environ.get("ENVIRONMENT", "test")
+            if environment == "prod":
+                cert_path = "../certs/webhook_cert.pem"
+                await bot.set_webhook(Config.TELEGRAM_WEBHOOK_URL, certificate=FSInputFile(cert_path))
+            else:
+                await bot.set_webhook(Config.TELEGRAM_WEBHOOK_URL)
+            logger.info(f"telegram webhook set to {Config.TELEGRAM_WEBHOOK_URL}")
         asyncio.create_task(drop_counters_task())
         # TODO: SetMyCommands and GetMyCommands triggers Telegram Flood Control
         # my_commands = await bot.get_my_commands(language_code="ru")

@@ -1,1 +1,1 @@
-gunicorn npb.application:create_app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --timeout 10 --graceful-timeout 60  --access-logfile /var/log/npb_access.log --error-logfile /var/log/npb_error.log --log-level debug
+gunicorn npb.application:create_app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --timeout 10 --graceful-timeout 60  --access-logfile /var/log/npb_access.log --error-logfile /var/log/npb_error.log --log-level debug --certfile /root/npb/certs/webhook_cert.pem --keyfile /root/npb/certs/webhook_pkey.pem
