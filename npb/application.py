@@ -131,7 +131,7 @@ def create_app() -> FastAPI:
                 await bot.delete_webhook()
             environment = environ.get("ENVIRONMENT", "test")
             if environment == "prod":
-                cert_path = "../certs/webhook_cert.pem"
+                cert_path = environ.get("CERT_PATH")
                 await bot.set_webhook(Config.TELEGRAM_WEBHOOK_URL, certificate=FSInputFile(cert_path))
             else:
                 await bot.set_webhook(Config.TELEGRAM_WEBHOOK_URL)
