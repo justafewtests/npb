@@ -124,8 +124,8 @@ def create_app() -> FastAPI:
         logger.info('apply "alembic upgrade head"')
         # init logger and other stuf
         webhook = await bot.get_webhook_info()
-        logger.info("current webhook: ", webhook)
-        logger.info("webhook to set: ", Config.TELEGRAM_WEBHOOK_URL)
+        logger.info(f"current webhook: {webhook.url}")
+        logger.info(f"webhook to set: {Config.TELEGRAM_WEBHOOK_URL}")
         if webhook.url != Config.TELEGRAM_WEBHOOK_URL:
             if not webhook.url:
                 await bot.delete_webhook()
