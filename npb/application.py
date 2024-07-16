@@ -125,13 +125,15 @@ def create_app() -> FastAPI:
         # init logger and other stuf
         webhook = await bot.get_webhook_info()
         logger.info(f"current webhook: {webhook.url}")
+        logger.info(f"full webhook info: {webhook}")
         logger.info(f"webhook to set: {Config.TELEGRAM_WEBHOOK_URL}")
         if webhook.url != Config.TELEGRAM_WEBHOOK_URL:
             if not webhook.url:
                 await bot.delete_webhook()
             if Config.ENVIRONMENT == "prod":
                 cert_path = Config.CERT_PATH
-                await bot.set_webhook(Config.TELEGRAM_WEBHOOK_URL, certificate=FSInputFile(cert_path))
+                r = await bot.set_webhook(Config.TELEGRAM_WEBHOOK_URL, certificate=FSInputFile(cert_path))
+                logger.info(f"set_webhook response: {r}")
             else:
                 await bot.set_webhook(Config.TELEGRAM_WEBHOOK_URL)
             logger.info(f"telegram webhook set to {Config.TELEGRAM_WEBHOOK_URL}")
