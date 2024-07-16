@@ -1,4 +1,3 @@
-from pathlib import Path
 import uvicorn
 
 from config import Config
@@ -13,6 +12,6 @@ if __name__ == "__main__":
         workers=Config.SERVICE_WORKERS,
     )
     if Config.ENVIRONMENT == "prod":
-        params["ssl_certfile"] = str(Path(Config.CERT_PATH) / "webhook_cert.pem")
-        params["ssl_keyfile"] = str(Path(Config.CERT_PATH) / "webhook_pkey.pem")
+        params["ssl_certfile"] = Config.CERT_PATH
+        params["ssl_keyfile"] = Config.CERT_KEY_PATH
     uvicorn.run(**params)

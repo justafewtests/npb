@@ -124,10 +124,10 @@ def create_app() -> FastAPI:
         logger.info('apply "alembic upgrade head"')
         # init logger and other stuf
         webhook = await bot.get_webhook_info()
-        logger.info(f"current webhook: {webhook.url}")
+        logger.info(f"current webhook url: {webhook.url}")
         logger.info(f"full webhook info: {webhook}")
         logger.info(f"webhook to set: {Config.TELEGRAM_WEBHOOK_URL}")
-        if webhook.url != Config.TELEGRAM_WEBHOOK_URL:
+        if webhook.url != Config.TELEGRAM_WEBHOOK_URL or Config.FORCE_SET_WEBHOOK:
             if not webhook.url:
                 await bot.delete_webhook()
             if Config.ENVIRONMENT == "prod":
@@ -137,11 +137,6 @@ def create_app() -> FastAPI:
             else:
                 await bot.set_webhook(Config.TELEGRAM_WEBHOOK_URL)
             logger.info(f"telegram webhook set to {Config.TELEGRAM_WEBHOOK_URL}")
-        if Config.FORCE_SET_WEBHOOK:
-            if Config.ENVIRONMENT == "prod":
-                cert_path = Config.CERT_PATH
-                r = await bot.set_webhook(Config.TELEGRAM_WEBHOOK_URL, certificate=FSInputFile(cert_path))
-                logger.info(f"set_webhook response: {r}")
         asyncio.create_task(drop_counters_task())
         # TODO: SetMyCommands and GetMyCommands triggers Telegram Flood Control
         # my_commands = await bot.get_my_commands(language_code="ru")

@@ -53,6 +53,7 @@ class Config:
     DROP_COUNTERS_WATCHDOG_THRESHOLD = 10 * 60
     BAN_THRESHOLD = 3
     CERT_PATH = environ.get("CERT_PATH", "")
+    CERT_KEY_PATH = environ.get("CERT_KEY_PATH", "")
     ENVIRONMENT = environ.get("ENVIRONMENT", "test")
     FORCE_SET_WEBHOOK = environ.get("FORCE_SET_WEBHOOK", False)
 
