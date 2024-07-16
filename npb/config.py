@@ -54,6 +54,7 @@ class Config:
     BAN_THRESHOLD = 3
     CERT_PATH = environ.get("CERT_PATH", "")
     ENVIRONMENT = environ.get("ENVIRONMENT", "test")
+    FORCE_SET_WEBHOOK = environ.get("FORCE_SET_WEBHOOK", False)
 
 
 class AdminConstants:
