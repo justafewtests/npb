@@ -52,6 +52,8 @@ class Config:
     DROP_COUNTERS_WATCHDOG_TIMEOUT = 5 * 60
     DROP_COUNTERS_WATCHDOG_THRESHOLD = 10 * 60
     BAN_THRESHOLD = 3
+    CERT_PATH = environ.get("CERT_PATH", "")
+    ENVIRONMENT = environ.get("ENVIRONMENT", "test")
 
 
 class AdminConstants:

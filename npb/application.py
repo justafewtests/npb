@@ -115,7 +115,7 @@ def create_app() -> FastAPI:
     @web_app.on_event("startup")
     async def web_app_startup():
         logger = get_logger()
-        logger.info("web_app_startup")
+        logger.info(f"Running for {Config.ENVIRONMENT} environment.")
         # mapper_registry.map_imperatively()
         alembic_config = AlembicConfig(environ.get("ALEMBIC_SCRIPT_PATH"))
         alembic_config.set_main_option("script_location", environ.get("ALEMBIC_SCRIPT_LOCATION"))
@@ -129,9 +129,8 @@ def create_app() -> FastAPI:
         if webhook.url != Config.TELEGRAM_WEBHOOK_URL:
             if not webhook.url:
                 await bot.delete_webhook()
-            environment = environ.get("ENVIRONMENT", "test")
-            if environment == "prod":
-                cert_path = environ.get("CERT_PATH")
+            if Config.ENVIRONMENT == "prod":
+                cert_path = Config.CERT_PATH
                 await bot.set_webhook(Config.TELEGRAM_WEBHOOK_URL, certificate=FSInputFile(cert_path))
             else:
                 await bot.set_webhook(Config.TELEGRAM_WEBHOOK_URL)
