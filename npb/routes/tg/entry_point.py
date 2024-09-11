@@ -41,7 +41,7 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
     """
     logger = get_logger()
     telegram_id = str(message.chat.id)
-    telegram_profile = str(message.chat.username)
+    telegram_profile = str(message.chat.username) if message.chat.username else None
     phone_number = str(message.contact.phone_number) if message.contact else None
     keyboard = None
 

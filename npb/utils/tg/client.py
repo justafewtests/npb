@@ -93,8 +93,8 @@ async def pick_master_available_slots_keyboard(
     :param days: Number of days to check slots.
     :return: Inline keyboard.
     """
-    tz_utc_9 = timezone(timedelta(hours=9))
-    _datetime_start = datetime.now(tz=tz_utc_9)
+    tz = timezone(timedelta(hours=Config.TZ_OFFSET))
+    _datetime_start = datetime.now(tz=tz)
     _datetime_end = _datetime_start + timedelta(days=days)
     where_clause = WhereClause(
         params=[

@@ -10,7 +10,7 @@ from aiogram.types import ErrorEvent, BotCommand, Update, User as AiogramUser, I
 from alembic import command
 from fastapi import FastAPI
 
-from npb.background import drop_counters_task
+from npb.background import periodic_task
 from npb.config import CommonConstants
 from npb.db.api import User
 from npb.db.core import engine
@@ -127,6 +127,7 @@ def create_app() -> FastAPI:
         logger.info(f"current webhook url: {webhook.url}")
         logger.info(f"full webhook info: {webhook}")
         logger.info(f"webhook to set: {Config.TELEGRAM_WEBHOOK_URL}")
+        logger.info(f"bot token: {Config.BOT_TOKEN}")
         if webhook.url != Config.TELEGRAM_WEBHOOK_URL or Config.FORCE_SET_WEBHOOK:
             if not webhook.url:
                 await bot.delete_webhook()
@@ -137,7 +138,7 @@ def create_app() -> FastAPI:
             else:
                 await bot.set_webhook(Config.TELEGRAM_WEBHOOK_URL)
             logger.info(f"telegram webhook set to {Config.TELEGRAM_WEBHOOK_URL}")
-        asyncio.create_task(drop_counters_task())
+        asyncio.create_task(periodic_task())
         # TODO: SetMyCommands and GetMyCommands triggers Telegram Flood Control
         # my_commands = await bot.get_my_commands(language_code="ru")
         # print("DEBUG my_commands: ", my_commands)

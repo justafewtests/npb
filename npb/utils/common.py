@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from logging import Logger
 from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple, Union
 import operator
@@ -167,6 +167,7 @@ def edit_profile_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="Изменить номер телефона", callback_data=CommonConstants.EDIT_PHONE_NUMBER)],
         [InlineKeyboardButton(text="Изменить instagram", callback_data=CommonConstants.EDIT_INSTAGRAM)],
         [InlineKeyboardButton(text="Изменить описание", callback_data=CommonConstants.EDIT_DESCRIPTION)],
+        [InlineKeyboardButton(text="Изменить telegram profile", callback_data=CommonConstants.EDIT_TELEGRAM_PROFILE)],
         [InlineKeyboardButton(text="Завершить", callback_data=CommonConstants.FINISH_FORM)],
     ]
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons, resize_keyboard=True)
@@ -321,7 +322,7 @@ async def get_picked_services_and_sub_services(
     return picked_service, picked_sub_services
 
 
-async def notify_user(text: str, telegram_id, logger: Logger):
+async def notify_user(text: str, telegram_id: str, logger: Logger):
     try:
         await bot.send_message(
             chat_id=telegram_id,
@@ -332,3 +333,50 @@ async def notify_user(text: str, telegram_id, logger: Logger):
         error_message = f"Could not notify user {telegram_id}. Details: {str(exc)}"
         logger.error(error_message)
         raise CouldNotNotify(error_message)
+
+
+async def cancel_appointment_and_notify_user(user: Row, logger: Logger, for_master: bool, engine: AsyncEngine):
+    telegram_id = None
+    if not for_master:
+        appointment_to_cancel = await Appointment(engine=engine, logger=logger).read_single_appointment_info(
+            auid=str(user.current_appointment)
+        )
+        telegram_id = str(appointment_to_cancel.client_telegram_id)
+    where_clause = WhereClause(
+        params=[appointment_table.c.auid],
+        values=[str(user.current_appointment)],
+        comparison_operators=["=="],
+    )
+    data_to_set = {
+        "is_reserved": False,
+        "client_telegram_id": None,
+    }
+    canceled_appointment = await Appointment(engine=engine, logger=logger).update_appointment_info(
+        data_to_set=data_to_set,
+        where_clause=where_clause,
+        returning_values=[
+            appointment_table.c.datetime,
+            appointment_table.c.master_telegram_id,
+            appointment_table.c.service,
+        ],
+    )
+    telegram_id = telegram_id or str(canceled_appointment[0].master_telegram_id)
+    user_info = _prepare_user_info(user=user, for_master=for_master)
+    notification_text = appointment_info(
+        date_and_time=canceled_appointment[0].datetime,
+        user_info=user_info,
+        service=canceled_appointment[0].service,
+        for_master=for_master,
+    )
+    notification_text = "Вашу запись отменили\n" + notification_text
+    await notify_user(text=notification_text, telegram_id=telegram_id, logger=logger)
+
+
+def contains_telegram_markdown(text: str) -> bool:
+    """
+    Checks if the input text contains Telegram Markdown syntax.
+
+    :param text: The input text to check.
+    :return: True if Telegram Markdown syntax is detected, False otherwise.
+    """
+    return Config.TELEGRAM_MARKDOWN_PATTERN.search(text) is not None

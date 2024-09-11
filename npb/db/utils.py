@@ -1,3 +1,4 @@
+from datetime import datetime, timezone, timedelta
 from enum import Enum
 import operator
 from typing import Any, List, Dict, Literal, Optional, Union
@@ -6,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import Column, Table, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from npb.config import Config
 
 COMPARISON_OPERATOR_BY_SYMBOL = {
     ">": operator.gt,
@@ -13,6 +15,7 @@ COMPARISON_OPERATOR_BY_SYMBOL = {
     "<": operator.lt,
     "<=": operator.le,
     "==": operator.eq,
+    "!=": operator.ne,
 }
 
 
@@ -24,7 +27,7 @@ class JoinTypes(Enum):
 
 
 def get_comparison_operator_by_symbol(
-    operator_as_symbol: Literal[">", ">=", "<", "<=", "=="]
+    operator_as_symbol: Literal[">", ">=", "<", "<=", "==", "!="]
 ) -> Union[operator.gt, operator.ge, operator.lt, operator.le, operator.eq]:
     """
     Returns a comparison operator as function by its symbol representation.
@@ -42,7 +45,7 @@ class WhereClause(BaseModel):
 
     params: Optional[List[Column]] = Field(default_factory=list, description="Params that are checked in where clause.")
     values: Optional[List[Any]] = Field(default_factory=list, description="Values that are checked in where clause.")
-    comparison_operators: Optional[List[Literal[">", ">=", "<", "<=", "=="]]] = Field(
+    comparison_operators: Optional[List[Literal[">", ">=", "<", "<=", "==", "!="]]] = Field(
         default_factory=list,
         description="Comparison operators to compare params and values"
     )
@@ -124,3 +127,8 @@ async def basic_update(
         result = await connection.execute(query)
         print(f"DEBUG basic update result: {str(result)}")
         return result.all()
+
+
+def create_timestamp_with_timezone() -> datetime:
+    tz = timezone(timedelta(hours=Config.TZ_OFFSET))
+    return datetime.now(tz=tz)

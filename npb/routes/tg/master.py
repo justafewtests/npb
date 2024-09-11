@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from logging import Logger
 from pprint import pprint
 import time
 import traceback
@@ -34,7 +35,7 @@ from npb.utils.common import (
     handle_start_edit_name,
     log_handler_info,
     master_profile_info,
-    pick_appointment_keyboard, _prepare_user_info, appointment_info, notify_user,
+    pick_appointment_keyboard, _prepare_user_info, appointment_info, notify_user, cancel_appointment_and_notify_user,
 )
 from npb.utils.tg.master import filled_registration_form, edit_month_calendar, handle_start_registration, \
     update_appointment_with_collision_check, appointments_per_period
@@ -122,7 +123,7 @@ async def _handle_my_timetable(
         )
 
 
-async def _handle_day_check(callback: CallbackQuery = None, message: Message = None) -> None:
+async def _handle_day_check(callback: CallbackQuery = None, message: Message = None, text_prefix: str = None) -> None:
     """
     Activates when master is going to check a day.
     """
@@ -149,6 +150,7 @@ async def _handle_day_check(callback: CallbackQuery = None, message: Message = N
             f"Кажется у вас нет слотов на {user.current_day} {Config.MONTHS_MAP.get(user.current_month)[1]} "
             f"{user.current_year}. Хотите добавить время?"
         )
+    text = text_prefix + text if text_prefix else text
     if message:
         await message.answer(text=text, reply_markup=keyboard)
     else:
@@ -203,6 +205,7 @@ async def _handle_time_slot_check(callback: CallbackQuery, state: FSMContext) ->
                     user_table.c.phone_number,
                     appointment_table.c.service,
                     appointment_table.c.datetime,
+                    appointment_table.c.auid,
                 ],
             )
             client_info = _prepare_user_info(user=appointments_and_client_info[0], for_master=True)
@@ -216,8 +219,19 @@ async def _handle_time_slot_check(callback: CallbackQuery, state: FSMContext) ->
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text="Изменить время", callback_data=MasterConstants.EDIT_TIME)],
-                    [InlineKeyboardButton(text="Назад", callback_data=MasterConstants.BACK_TO_TIME)]
+                    [InlineKeyboardButton(text="Отменить запись", callback_data=MasterConstants.CANCEL_APPOINTMENT)],
+                    [InlineKeyboardButton(text="Назад", callback_data=MasterConstants.BACK_TO_TIME)],
                 ]
+            )
+            user_where_clause = WhereClause(
+                params=[user_table.c.telegram_id],
+                values=[telegram_id],
+                comparison_operators=["=="],
+            )
+            data_to_set = {"current_appointment": str(appointments_and_client_info[0].auid)}
+            await User(engine=engine, logger=logger).update_user_info(
+                data_to_set=data_to_set,
+                where_clause=user_where_clause,
             )
             await bot.edit_message_text(
                 text=text,
@@ -561,10 +575,7 @@ async def handle_edit_timetable(callback: CallbackQuery, state: FSMContext) -> N
     current_year = user.current_year or datetime.now().year
     data_to_set = {"current_month": current_month, "current_year": current_year}
     if callback.data == MasterConstants.CALENDAR_IGNORE:
-        calendar, current_calendar = await edit_month_calendar(current_calendar=user.current_calendar, edit_mode=edit_mode)
-        data_to_set["current_calendar"] = current_calendar
-        await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
-        await callback.answer("Невозможно выбрать эту дату.", reply_markup=calendar)
+        await callback.answer("Невозможно выбрать эту дату.", reply_markup=user.current_calendar)
         return
     elif callback.data == MasterConstants.CALENDAR_BACK or callback.data == MasterConstants.CALENDAR_FORWARD:
         current_month, current_year = get_month(
@@ -824,15 +835,21 @@ async def handle_time_slot_edit_start(callback: CallbackQuery, state: FSMContext
     )
 
 
-@master_router.callback_query(Master.edit_time, F.data == MasterConstants.BACK_TO_TIME)
+@master_router.callback_query(
+    Master.edit_time,
+    (F.data == MasterConstants.BACK_TO_TIME) | (F.data == MasterConstants.CANCEL_APPOINTMENT),
+)
 async def handle_time_slot_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     """
-    Activates when master has specified a slot time.
+    Activates when master has canceled appointment or pressed 'Назад'.
     """
     logger = get_logger()
+    telegram_id = str(callback.message.chat.id)
     log_handler_info(handler_name="master.handle_time_slot_cancel", logger=logger, callback_data=callback.data)
     await state.set_state(Master.edit_day)
-    await _handle_day_check(callback=callback)
+    master = await User(engine=engine, logger=logger).read_single_user_info(tg_user_id=telegram_id)
+    await cancel_appointment_and_notify_user(user=master, logger=logger, for_master=False, engine=engine)
+    await _handle_day_check(callback=callback, text_prefix="Запись успешно отменена!\n")
 
 
 @master_router.message(Master.edit_time)

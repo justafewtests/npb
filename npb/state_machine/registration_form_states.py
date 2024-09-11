@@ -19,3 +19,5 @@ class RegistrationForm(StatesGroup):
     edit = State()
     edit_start = State()
     default = State()
+    telegram_profile = State()
+    edit_telegram_profile = State()

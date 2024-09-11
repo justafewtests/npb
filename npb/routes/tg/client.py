@@ -32,10 +32,11 @@ from npb.utils.tg.client import pick_master_keyboard, pick_day_keyboard, my_appo
     count_appointments_for_client
 from npb.utils.common import get_user_data, log_handler_info, master_profile_info, pick_sub_service_keyboard, \
     get_month_edges, get_picked_services_and_sub_services, get_month, _prepare_user_info, appointment_info, is_uuid, \
-    notify_user
+    notify_user, cancel_appointment_and_notify_user
 from npb.utils.tg.client import pick_single_service_keyboard, pick_master_available_slots_keyboard
 from npb.routes.tg.registration_form import _handle_sub_service, _handle_start_edit_phone_number, \
-    _handle_start_edit_instagram_link, _handle_phone_number
+    _handle_start_edit_instagram_link, _handle_phone_number, _handle_start_edit_telegram_profile, \
+    _handle_telegram_profile
 
 client_router = Router()
 
@@ -140,9 +141,15 @@ async def _handle_filter(callback: CallbackQuery) -> None:
     )
 
 
-async def _handle_my_appointments_start(callback: CallbackQuery, logger: Logger, month: int = None):
+async def _handle_my_appointments_start(
+    callback: CallbackQuery,
+    logger: Logger,
+    month: int = None,
+    text: str = None,
+    now: datetime = None,
+):
     telegram_id = str(callback.message.chat.id)
-    now = datetime.now()
+    now = now or datetime.now()
     month = month or now.month
     keyboard = await my_appointments_keyboard(
         current_month=month,
@@ -151,7 +158,7 @@ async def _handle_my_appointments_start(callback: CallbackQuery, logger: Logger,
         logger=logger,
         now=now,
     )
-    text = (
+    text = text or (
         f"Ваши записи на {Config.MONTHS_MAP.get(month)[0]} {now.year}. Нажмите на запись, чтобы получить более "
         f"подробную информацию, или выберите другой месяц."
     )
@@ -162,34 +169,6 @@ async def _handle_my_appointments_start(callback: CallbackQuery, logger: Logger,
         reply_markup=keyboard,
         parse_mode=ParseMode.MARKDOWN,
     )
-
-
-async def _handle_start_edit_telegram_profile(callback: CallbackQuery):
-    text = (
-        "Пожалуйста, введите название вашего профиля в telegram (его можно увидеть в разделе 'Настройки')"
-    )
-    await callback.message.answer(text=text)
-
-
-async def _handle_telegram_profile(
-    message: Message, next_state: State, text: str, keyboard: InlineKeyboardMarkup, logger: Logger, telegram_id: str,
-):
-    if len(message.text) < 5:
-        text = "Длина названия телеграм профиля не может быть меньше 5 символов."
-        keyboard = None
-    elif len(message.text) > 32:
-        text = "Длина названия телеграм профиля не может быть больше 32 символов."
-        keyboard = None
-    elif not re.search(r'^[a-zA-Z0-9_]+$', message.text):
-        text = "Название профиля должно состоять только из латинских букв, цифр, и символов нижнего подчёркивания '_'."
-        keyboard = None
-    else:
-        where_clause = WhereClause(
-            params=[user_table.c.telegram_id], values=[telegram_id], comparison_operators=["=="]
-        )
-        data_to_set = {"telegram_profile": message.text, "state": next_state.state}
-        await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
-    await message.answer(text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
 
 
 async def _handle_pick_day(
@@ -251,6 +230,7 @@ async def _handle_pick_time(
         f"*{current_day or callback.data} {Config.MONTHS_MAP.get(current_month)[1]} {current_year}*\nПожалуйста, "
         f"выберите время:"
     )
+    tz = timezone(timedelta(hours=Config.TZ_OFFSET))
     if data_to_set is not None:
         data_to_set["current_day"] = int(callback.data)
     appointment_where_clause = WhereClause(
@@ -260,6 +240,7 @@ async def _handle_pick_time(
             func.extract("day", appointment_table.c.datetime) == int(current_day or callback.data),
             func.extract("month", appointment_table.c.datetime) == current_month,
             func.extract("year", appointment_table.c.datetime) == current_year,
+            appointment_table.c.datetime > datetime.now(tz=tz),
         ]
     )
     appointments = await Appointment(engine=engine, logger=logger).read_appointment_info(
@@ -304,13 +285,26 @@ async def handle_my_appointments_start(callback: CallbackQuery, state: FSMContex
     await _handle_my_appointments_start(callback=callback, logger=logger)
 
 
-@client_router.callback_query(Client.appointment_info, F.data == ClientConstants.CANCEL)
+@client_router.callback_query(
+    Client.appointment_info, (F.data == ClientConstants.CANCEL) | (F.data == ClientConstants.APPOINTMENTS_BACK)
+)
 async def handle_my_appointments_cancel(callback: CallbackQuery, state: FSMContext):
     telegram_id = str(callback.message.chat.id)
     logger = get_logger()
     log_handler_info(handler_name="client.handle_my_appointments_cancel", logger=logger, callback_data=callback.data)
     user = await User(engine=engine, logger=logger).read_single_user_info(tg_user_id=telegram_id)
-    await _handle_my_appointments_start(callback=callback, logger=logger, month=user.current_month)
+    if callback.data == ClientConstants.APPOINTMENTS_BACK:  # кнопка назад
+        await _handle_my_appointments_start(callback=callback, logger=logger, month=user.current_month)
+    else:  # отмена записи
+        await cancel_appointment_and_notify_user(user=user, logger=logger, for_master=True, engine=engine)
+        now = datetime.now()
+        text = (
+            f"Запись успешно отменена.\nВаши записи на {Config.MONTHS_MAP.get(now.month)[0]} {now.year}. "
+            f"Нажмите на запись, чтобы получить более подробную информацию, или выберите другой месяц."
+        )
+        await _handle_my_appointments_start(
+            callback=callback, logger=logger, month=user.current_month, text=text, now=now
+        )
 
 
 @client_router.callback_query(Client.appointment_info)
@@ -357,7 +351,23 @@ async def handle_my_appointments(callback: CallbackQuery, state: FSMContext):
             service=appointments_and_master_info[0].service,
         )
         keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="Назад", callback_data=ClientConstants.CANCEL)]]
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="Назад", callback_data=ClientConstants.APPOINTMENTS_BACK),
+                    InlineKeyboardButton(text="Отменить", callback_data=ClientConstants.CANCEL)
+                ]
+            ]
+        )
+        telegram_id = str(callback.message.chat.id)
+        user_where_clause = WhereClause(
+            params=[user_table.c.telegram_id],
+            values=[telegram_id],
+            comparison_operators=["=="],
+        )
+        user_data_to_set = {"current_appointment": str(callback.data)}
+        await User(engine=engine, logger=logger).update_user_info(
+            data_to_set=user_data_to_set,
+            where_clause=user_where_clause,
         )
     else:  # user picked month
         await _handle_my_appointments_start(callback=callback, logger=logger, month=int(callback.data))
@@ -633,7 +643,7 @@ async def handle_make_appointment_time_cancel(callback: CallbackQuery, state: FS
 
 @client_router.callback_query(
     Client.master_calendar_time,
-    (F.data == ClientConstants.SPECIFY_PHONE) | (F.data == ClientConstants.SPECIFY_TG_PROFILE)
+    (F.data == ClientConstants.SPECIFY_PHONE) | (F.data == CommonConstants.EDIT_TELEGRAM_PROFILE)
 )
 async def handle_make_appointment_specify_contact(callback: CallbackQuery, state: FSMContext) -> None:
     """
@@ -667,8 +677,8 @@ async def handle_specify_phone_number(message: Message, state: FSMContext) -> No
         telegram_id=user.current_master,
     )
     text = (
-        f"Ваш номер телефона успешно сохранён! *{user.current_day} {Config.MONTHS_MAP.get(current_month)[1]} "
-        f"{current_year}*\nПожалуйста, выберите время:"
+        f"Ваш номер телефона успешно сохранён!\n"
+        f"*{user.current_day} {Config.MONTHS_MAP.get(current_month)[1]} {current_year}*\nПожалуйста, выберите время:"
     )
     _, keyboard, _ = await _handle_pick_time(
         current_month=user.current_month,
@@ -723,6 +733,7 @@ async def handle_specify_telegram_profile(message: Message, state: FSMContext) -
         keyboard=keyboard,
         logger=logger,
         telegram_id=telegram_id,
+        state_obj=state,
     )
 
 
@@ -760,7 +771,7 @@ async def handle_make_appointment_time(callback: CallbackQuery, state: FSMContex
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="Указать телефон", callback_data=ClientConstants.SPECIFY_PHONE)],
-                [InlineKeyboardButton(text="Указать телеграм", callback_data=ClientConstants.SPECIFY_TG_PROFILE)],
+                [InlineKeyboardButton(text="Указать телеграм", callback_data=CommonConstants.EDIT_TELEGRAM_PROFILE)],
             ]
         )
     else:

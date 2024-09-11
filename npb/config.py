@@ -1,3 +1,4 @@
+import re
 from os import environ
 
 from aiogram.types import InlineKeyboardButton
@@ -9,7 +10,7 @@ load_dotenv()
 
 
 class Config:
-    BOT_TOKEN = "6753356362:AAG5-5TmguhZCgzmrdydBw8i117tQAkpBEc"
+    BOT_TOKEN = environ.get("BOT_TOKEN")
     SERVICE_HOST = environ.get("SERVICE_HOST", "localhost")
     SERVICE_PORT = int(environ.get("SERVICE_PORT", "8000"))
     SERVICE_WORKERS = int(environ.get("SERVICE_WORKERS", "1"))
@@ -48,14 +49,30 @@ class Config:
     FLOOD_THRESHOLD = 5
     MAX_APPOINTMENTS_PER_DAY = 2
     MAX_APPOINTMENTS_PER_MONTH = 310
+    APPOINTMENT_NOTIFICATION_TIME = 10000 * 60
+    APPOINTMENT_NOTIFICATION_COOLDOWN = 0 * 60
+    APPOINTMENT_NOTIFICATION_LIMIT = 3
     MAX_TIME_SLOTS_PER_DAY = 10
-    DROP_COUNTERS_WATCHDOG_TIMEOUT = 5 * 60
-    DROP_COUNTERS_WATCHDOG_THRESHOLD = 10 * 60
+    WATCHDOG_TIMEOUT = 0.5 * 60
+    COUNTERS_THRESHOLD = 10 * 60
     BAN_THRESHOLD = 3
     CERT_PATH = environ.get("CERT_PATH", "")
     CERT_KEY_PATH = environ.get("CERT_KEY_PATH", "")
     ENVIRONMENT = environ.get("ENVIRONMENT", "test")
     FORCE_SET_WEBHOOK = environ.get("FORCE_SET_WEBHOOK", False)
+    MAX_PROCESSED_UNIQUE_UPDATES = 500
+    TELEGRAM_MARKDOWN_PATTERN = re.compile(
+        r'\*.*?\*'            # Bold (e.g., *bold*)
+        r'|_.*?_ '            # Italics (e.g., _italic_)
+        r'|`.*?`'            # Inline code (e.g., `code`)
+        r'|```.*?```'        # Code blocks (e.g., ```code block```), re.DOTALL handles multi-line
+        r'|!\[.*?\]\(.*?\)'  # Images (e.g., ![alt](url))
+        r'|\[.*?\]\(.*?\)'   # Links (e.g., [text](url))
+        r'|^[\*\-\+]\s'      # List items (e.g., * item, - item, + item), re.MULTILINE handles line breaks
+        r'|^\d+\.\s'         # Ordered list (e.g., 1. item)
+        r'|^#\s',            # Headers (e.g., # Header)
+        re.MULTILINE | re.DOTALL
+    )
 
 
 class AdminConstants:
@@ -65,10 +82,10 @@ class AdminConstants:
 
 
 class ClientConstants:
+    APPOINTMENTS_BACK = "client.appointments_back"
     BECOME_MASTER = "client.become_master"
     CANCEL = "client.cancel"
     SPECIFY_PHONE = "client.specify_phone"
-    SPECIFY_TG_PROFILE = "client.specify_tg_phone"
     BACK_TO_SERVICES = "client.back_to_services"
     MAKE_APPOINTMENT = "client.make_appointment"
     MY_APPOINTMENTS = "client.my_appointments"
@@ -98,6 +115,7 @@ class MasterConstants:
     CALENDAR_ADD_TIME = "master.cal_add_time"
     CALENDAR_ADD_TIME_BULK = "master.cal_add_time_bulk"
     CALENDAR_DELETE_TIME = "master.cal_delete_time"
+    CANCEL_APPOINTMENT = "master.cancel_appointment"
     BACK_TO_TIMETABLE = "master.back_to_timetable"
     BACK_TO_DAY = "master.back_to_day"
     BACK_TO_TIME = "master.back_to_time"
@@ -110,6 +128,7 @@ class CommonConstants:
     EDIT_PHONE_NUMBER = "com.edit_phone_number"
     EDIT_INSTAGRAM = "com.edit_instagram"
     EDIT_DESCRIPTION = "com.edit_description"
+    EDIT_TELEGRAM_PROFILE = "client.specify_tg_phone"
     FINISH_FORM = "com.finish_form"
     APPOINTMENT_DATETIME_FORMAT = "%"
     BECOME_MASTER = (

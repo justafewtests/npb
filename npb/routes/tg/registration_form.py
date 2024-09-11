@@ -1,3 +1,4 @@
+import re
 from logging import Logger
 from typing import Union, Callable
 
@@ -279,7 +280,10 @@ async def _handle_description(
     )
     data_to_set = {"description": description}
     await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
-    text = text or "Ваша регистрация почти окончена! Хотите изменить что-нибудь?"
+    text = text or (
+        "Пожалуйста, введите название вашего профиля в Telegram (его можно увидеть в разделе 'Настройки' -> "
+        "'Мой профиль' -> 'Имя Пользователя')."
+    )
     await message.answer(text=text, reply_markup=keyboard)
 
 
@@ -332,6 +336,67 @@ async def _handle_name(
                 await callback.message.answer(text=text, reply_markup=keyboard)
     else:
         await _handle_pick_service(telegram_id=telegram_id, logger=logger, message=message)
+
+
+async def _handle_start_edit_telegram_profile(
+    callback: CallbackQuery,
+    text: str = None,
+    keyboard: Union[InlineKeyboardMarkup, ReplyKeyboardMarkup] = None,
+):
+    text = text or (
+        "Пожалуйста, введите название вашего профиля в Telegram (его можно увидеть в разделе 'Настройки' -> "
+        "'Мой профиль' -> 'Имя Пользователя')."
+    )
+    await callback.message.answer(text=text, reply_markup=keyboard)
+
+
+async def _handle_telegram_profile(
+    telegram_id: str,
+    logger: Logger,
+    state_obj: FSMContext,
+    next_state: State,
+    text: str = None,
+    message: Message = None,
+    callback: CallbackQuery = None,
+    update_current_message: bool = False,
+    keyboard: Union[InlineKeyboardMarkup, ReplyKeyboardMarkup] = None,
+):
+    if not callback and not message:
+        raise NoTelegramUpdateObject("Neither callback nor message is specified.")
+    telegram_profile = message.text.strip().lstrip("@")
+    if len(telegram_profile) < 5:
+        text = "Длина названия телеграм профиля не может быть меньше 5 символов."
+        keyboard = None
+    elif len(telegram_profile) > 32:
+        text = "Длина названия телеграм профиля не может быть больше 32 символов."
+        keyboard = None
+    elif not re.search(r'^[a-zA-Z0-9_]+$', telegram_profile):
+        text = "Название профиля должно состоять только из латинских букв, цифр, и символов нижнего подчёркивания '_'."
+        keyboard = None
+    else:
+        await state_obj.set_state(next_state)
+        text = text or "Ваша регистрация почти окончена! Хотите что-нибудь изменить?"
+        where_clause = WhereClause(
+            params=[user_table.c.telegram_id], values=[telegram_id], comparison_operators=["=="]
+        )
+        keyboard = keyboard or InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="Пропустить", callback_data=RegistrationConstants.SKIP)]]
+        )
+        data_to_set = {"telegram_profile": telegram_profile, "state": next_state.state}
+        await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
+    if message:
+        await message.answer(text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
+    else:
+        if update_current_message:
+            await bot.edit_message_text(
+                text=text,
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id,
+                reply_markup=keyboard,
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            await callback.message.answer(text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
 
 
 async def _handle_sub_service(callback: CallbackQuery, client_picks: bool = False) -> None:
@@ -635,12 +700,16 @@ async def handle_instagram_link(message: Message, state: FSMContext) -> None:
     logger = get_logger()
     log_handler_info(handler_name="reg_form.handle_instagram_link", logger=logger, message_text=message.text)
     telegram_id = str(message.chat.id)
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="Пропустить", callback_data=RegistrationConstants.SKIP)]]
+    )
     await _handle_instagram_link(
         telegram_id=telegram_id,
         logger=logger,
         message=message,
         state_obj=state,
         next_state=RegistrationForm.description,
+        keyboard=keyboard
     )
 
 
@@ -678,8 +747,28 @@ async def handle_description_skip(callback: CallbackQuery, state: FSMContext) ->
     """
     logger = get_logger()
     log_handler_info(handler_name="reg_form.handle_description_skip", logger=logger, callback_data=callback.data)
-    await state.set_state(RegistrationForm.edit)
-    await _handle_start_edit_profile(callback=callback)
+    telegram_id = str(callback.message.chat.id)
+    where_clause = WhereClause(
+        params=[user_table.c.telegram_id, user_table.c.telegram_profile],
+        values=[telegram_id, None],
+        comparison_operators=["==", "!="],
+    )
+    telegram_profile_specified = await User(engine=engine, logger=logger).read_user_info(where_clause=where_clause)
+    if not telegram_profile_specified:
+        text = (
+            "Пожалуйста, введите название вашего профиля в Telegram (его можно увидеть в разделе 'Настройки' -> "
+            "'Мой профиль' -> 'Имя Пользователя'). Или нажмите на кнопку 'Пропустить'."
+        )
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="Пропустить", callback_data=RegistrationConstants.SKIP)]]
+        )
+        next_state = RegistrationForm.telegram_profile
+    else:
+        text = "Ваша регистрация почти окончена! Хотите что-нибудь изменить?"
+        keyboard = edit_profile_keyboard()
+        next_state = RegistrationForm.edit
+    await state.set_state(next_state)
+    await callback.message.answer(text=text, reply_markup=keyboard)
 
 
 @registration_form_router.message(RegistrationForm.description)
@@ -693,14 +782,33 @@ async def handle_description(message: Message, state: FSMContext) -> None:
     logger = get_logger()
     log_handler_info(handler_name="reg_form.handle_description", logger=logger, message_text=message.text)
     telegram_id = str(message.chat.id)
-    keyboard = edit_profile_keyboard()
+    where_clause = WhereClause(
+        params=[user_table.c.telegram_id, user_table.c.telegram_profile],
+        values=[telegram_id, None],
+        comparison_operators=["==", "!="],
+    )
+    telegram_profile_specified = await User(engine=engine, logger=logger).read_user_info(where_clause=where_clause)
+    if not telegram_profile_specified:
+        text = (
+            "Пожалуйста, введите название вашего профиля в Telegram (его можно увидеть в разделе 'Настройки' -> "
+            "'Мой профиль' -> 'Имя Пользователя'). Или нажмите на кнопку 'Пропустить'."
+        )
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="Пропустить", callback_data=RegistrationConstants.SKIP)]]
+        )
+        next_state = RegistrationForm.telegram_profile
+    else:
+        text = "Ваша регистрация почти окончена! Хотите что-нибудь изменить?"
+        keyboard = edit_profile_keyboard()
+        next_state = RegistrationForm.edit
     await _handle_description(
         telegram_id=telegram_id,
         logger=logger,
         message=message,
         state_obj=state,
-        next_state=RegistrationForm.edit,
+        next_state=next_state,
         keyboard=keyboard,
+        text=text
     )
 
 
@@ -718,6 +826,66 @@ async def handle_description_edit(message: Message, state: FSMContext) -> None:
     text = "Что Вы хотите изменить?"
     keyboard = edit_profile_keyboard()
     await _handle_description(
+        telegram_id=telegram_id,
+        logger=logger,
+        message=message,
+        state_obj=state,
+        next_state=RegistrationForm.edit,
+        text=text,
+        keyboard=keyboard,
+    )
+
+
+@registration_form_router.callback_query(RegistrationForm.telegram_profile, F.data == RegistrationConstants.SKIP)
+async def handle_telegram_profile_skip(callback: CallbackQuery, state: FSMContext) -> None:
+    """
+    Activates when user does not want to specify his telegram profile.
+    :param callback:
+    :param state:
+    :return:
+    """
+    logger = get_logger()
+    log_handler_info(handler_name="reg_form.telegram_profile_skip", logger=logger, callback_data=callback.data)
+    await state.set_state(RegistrationForm.edit)
+    await _handle_start_edit_profile(callback=callback)
+
+
+@registration_form_router.message(RegistrationForm.telegram_profile)
+async def handle_telegram_profile(message: Message, state: FSMContext) -> None:
+    """
+    Activates when user has already specified his telegram profile.
+    :param message:
+    :param state:
+    :return:
+    """
+    logger = get_logger()
+    log_handler_info(handler_name="reg_form.telegram_profile", logger=logger, message_text=message.text)
+    telegram_id = str(message.chat.id)
+    keyboard = edit_profile_keyboard()
+    await _handle_telegram_profile(
+        telegram_id=telegram_id,
+        logger=logger,
+        state_obj=state,
+        next_state=RegistrationForm.edit,
+        message=message,
+        keyboard=keyboard,
+    )
+
+
+@registration_form_router.message(RegistrationForm.edit_telegram_profile)
+async def handle_telegram_profile_edit(message: Message, state: FSMContext) -> None:
+    """
+    Activates when user is going to edit his telegram_profile.
+    :param message:
+    :param state:
+    :return:
+    """
+    logger = get_logger()
+    log_handler_info(handler_name="reg_form.handle_telegram_profile_edit", logger=logger, message_text=message.text)
+    telegram_id = str(message.chat.id)
+    text = "Что Вы хотите изменить?"
+    keyboard = edit_profile_keyboard()
+    await _handle_telegram_profile(
         telegram_id=telegram_id,
         logger=logger,
         message=message,
@@ -787,6 +955,13 @@ async def handle_edit(callback: CallbackQuery, state: FSMContext) -> None:
             )
             await state.set_state(RegistrationForm.edit_description)
             await _handle_start_edit_description(callback=callback)
+        case CommonConstants.EDIT_TELEGRAM_PROFILE:
+            data_to_set = {"edit_mode": data}
+            await User(engine=engine, logger=logger).update_user_info(
+                where_clause=where_clause, data_to_set=data_to_set
+            )
+            await state.set_state(RegistrationForm.edit_telegram_profile)
+            await _handle_start_edit_telegram_profile(callback=callback)
         case CommonConstants.FINISH_FORM:
             user = await User(engine=engine, logger=logger).read_single_user_info(tg_user_id=telegram_id)
             data_to_set = {"edit_mode": None, "fill_reg_form": True, "state": Master.default.state}

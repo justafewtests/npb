@@ -1,9 +1,12 @@
+from datetime import datetime, timedelta, timezone
 from logging import Logger
+from operator import or_
 from typing import Any, Dict, List, Sequence, Union, Iterable
 
-from sqlalchemy import Column, delete, insert, Row, select, update, func
+from sqlalchemy import Column, delete, insert, Row, select, update, func, and_, text, extract
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection
 from sqlalchemy.exc import MultipleResultsFound
+from sqlalchemy.sql.functions import coalesce
 
 from npb.config import CommonConstants, Config
 from npb.db.abstract_repository import AppointmentAbstractRepository, UserAbstractRepository
@@ -236,6 +239,7 @@ class Appointment(AppointmentAbstractRepository):
             for clause in order_by:
                 query = query.order_by(clause)
         print("DEBUG read_appointment_info query: ", str(query))
+        print("DEBUG read_appointment_info where_clause: ", str(where_clause))
         async with self._engine.begin() as connection:
             result = await connection.execute(query)
             return result.all()
@@ -287,3 +291,37 @@ class Appointment(AppointmentAbstractRepository):
             reserved_day = appointment.datetime.day
             result[reserved_day] = True
         return result
+
+    async def upcoming_appointments_notification(self) -> Sequence[Row]:
+        """
+        Notify users about upcoming appointments.
+        """
+        tz = timezone(timedelta(hours=Config.TZ_OFFSET))
+        now = datetime.now(tz=tz)
+        query = update(appointment_table).where(
+            and_(
+                appointment_table.c.is_reserved.is_(True),
+                extract("epoch", appointment_table.c.datetime - now) >= 0,
+                extract("epoch", appointment_table.c.datetime - now) <= Config.APPOINTMENT_NOTIFICATION_TIME,
+                or_(
+                    appointment_table.c.notifications < Config.APPOINTMENT_NOTIFICATION_LIMIT,
+                    appointment_table.c.notifications.is_(None),
+                ),
+                extract(
+                    "epoch", now - coalesce(
+                        appointment_table.c.notification_ts, text("'1970-01-01 00:00:00+00:00'")
+                    )
+                ) >= Config.APPOINTMENT_NOTIFICATION_COOLDOWN
+            )
+        ).values(
+            notifications=appointment_table.c.notifications + 1,
+            notification_ts=datetime.now(),
+        ).returning(
+            appointment_table.c.auid,
+            appointment_table.c.client_telegram_id,
+            appointment_table.c.master_telegram_id,
+            appointment_table.c.datetime,
+        )
+        async with self._engine.begin() as connection:
+            result = await connection.execute(query)
+            return result.all()

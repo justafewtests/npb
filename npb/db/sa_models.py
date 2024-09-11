@@ -6,7 +6,6 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from npb.config import CommonConstants
 from npb.db.core import mapper_registry
 
-
 user_table = Table(
     "npb_user",
     mapper_registry.metadata,
@@ -91,7 +90,6 @@ user_table = Table(
     ),
 )
 
-
 appointment_table = Table(
     "appointment",
     # TODO: need an in here?
@@ -120,5 +118,12 @@ appointment_table = Table(
         # unique=True,
     ),
     Column("is_reserved", Boolean, comment="Is slot reserved.", default=False),
+    Column(
+        "notifications", Integer, comment="How many notifications was sent for this appointment.",
+        server_default=text("0")
+    ),
+    Column(
+        "notification_ts", DateTime(timezone=True), comment="Last notification ts"
+    ),
     UniqueConstraint("master_telegram_id", "datetime"),
 )

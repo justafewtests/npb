@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, ConfigDict
 
 from npb.config import CommonConstants
+from npb.db.utils import create_timestamp_with_timezone
 
 
 class UserModel(BaseModel):
@@ -69,6 +70,12 @@ class AppointmentModel(BaseModel):
     service: Optional[str] = Field(default=None, description="Chosen service.")
     master_telegram_id: str = Field(description="Master telegram id.")
     is_reserved: Optional[bool] = Field(default=False, description="Is slot reserved.")
+    notifications: Optional[int] = Field(
+        default=None, description="How many notifications was sent for this appointment."
+    )
+    notification_ts: Optional[python_datetime] = Field(
+        description="Last notification ts.", default_factory=create_timestamp_with_timezone
+    )
 
 
 class AppointmentList(BaseModel):
