@@ -60,8 +60,7 @@ async def handle_start_registration(callback: CallbackQuery, state: FSMContext) 
     """
     await state.set_state(RegistrationForm.name)
     text = (
-        "Кажется вы ещё не заполнили форму регистрации? Для осуществлений функций Мастера необходимо заполнить "
-        "форму регистрации. Пожалуйста, ответьте на несколько вопросов."
+        "Кажется вы ещё не заполнили форму регистрации? Пожалуйста, ответьте на несколько вопросов."
     )
     await callback.message.answer(text=text)
     await handle_start_edit_name(callback=callback)

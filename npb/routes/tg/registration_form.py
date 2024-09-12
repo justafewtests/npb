@@ -41,8 +41,9 @@ from npb.utils.tg.registration_form import (
     pick_service_keyboard,
 )
 
-
 registration_form_router = Router()
+
+
 # registration_form_router.message.outer_middleware(HandlerInfoMiddleware())
 
 
@@ -192,7 +193,12 @@ async def _handle_phone_number(
         keyboard = None
     else:
         await state_obj.set_state(next_state)
-        text = text or "Пожалуйста, введите название вашего профиля в instagram или нажмите 'Пропустить'."
+        text = text or (
+            "Пожалуйста, введите название вашего профиля в Instagram.\n"
+            f"Максимальная длина - {Config.USER_INSTAGRAM_MAX_LENGTH} символов.\n"
+            "Разрешено использовать *буквы латинского алфавита*, *цифры*, *знак нижнего подчеркивания (_)* и *точки (.)"
+            "*."
+        )
         where_clause = WhereClause(
             params=[user_table.c.telegram_id],
             values=[telegram_id],
@@ -204,7 +210,7 @@ async def _handle_phone_number(
         data_to_set = {"phone_number": phone_number}
         await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
     if message:
-        await message.answer(text=text, reply_markup=keyboard)
+        await message.answer(text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
     else:
         if update_current_message:
             await bot.edit_message_text(
@@ -218,12 +224,30 @@ async def _handle_phone_number(
             await callback.message.answer(text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
 
 
-async def _handle_start_edit_instagram_link(callback: CallbackQuery) -> None:
+async def _handle_start_edit_instagram_link(
+    callback: CallbackQuery = None,
+    message: Message = None,
+    provide_hint: bool = False,
+    keyboard: Union[InlineKeyboardMarkup, ReplyKeyboardMarkup] = None,
+) -> None:
     """
     Activates when client going to edit instagram link.
     """
-    text = "Пожалуйста, введите название вашего профиля в instagram."
-    await callback.message.answer(text=text)
+    if not callback and not message:
+        raise NoTelegramUpdateObject("Neither callback nor message is specified.")
+    text = (
+        "Пожалуйста, введите название вашего профиля в Instagram.\n"
+        f"Максимальная длина - {Config.USER_INSTAGRAM_MAX_LENGTH} символов.\n"
+        "Разрешено использовать *буквы латинского алфавита*, *цифры*, *знак нижнего подчеркивания (_)* и *точки (.)*."
+    )
+    if provide_hint:
+        text += (
+            "\nНазвание Вашего профиля Вы можете найти в шапке профиля в приложении Instagram."
+        )
+    if callback:
+        await callback.message.answer(text=text, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard)
+    else:
+        await message.answer(text=text, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard)
 
 
 async def _handle_instagram_link(
@@ -235,8 +259,30 @@ async def _handle_instagram_link(
     text: str = None,
     keyboard: Union[InlineKeyboardMarkup, ReplyKeyboardMarkup] = None,
 ) -> None:
+    invalid_instagram_profile = False
+    instagram_profile = message.text.strip()
+    instagram_link = f"https://instagram.com/{instagram_profile}"
+    if len(instagram_profile) > Config.USER_INSTAGRAM_MAX_LENGTH:
+        invalid_instagram_profile = True
+        text = f"Вы ввели слишком длинное название (максимально допустимая длина: {Config.USER_INSTAGRAM_MAX_LENGTH})."
+    elif not RegistrationConstants.USER_VALID_INSTAGRAM.match(instagram_profile):
+        invalid_instagram_profile = True
+        text = "Вы ввели некорректное название."
+    elif await User(engine=engine, logger=logger).read_user_info(
+        where_clause=WhereClause(
+            params=[user_table.c.instagram_link],
+            values=[instagram_link],
+            comparison_operators=["=="]
+        ),
+        limit=1,
+    ):
+        invalid_instagram_profile = True
+        text = f"К сожалению, это название уже занято."
+    if invalid_instagram_profile:
+        await message.answer(text=text)
+        await _handle_start_edit_instagram_link(message=message, provide_hint=True)
+        return
     await state_obj.set_state(next_state)
-    instagram_link = message.text  # TODO: make instagram link validation
     where_clause = WhereClause(
         params=[user_table.c.telegram_id],
         values=[telegram_id],
@@ -245,21 +291,34 @@ async def _handle_instagram_link(
     data_to_set = {"instagram_link": instagram_link}
     await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
     text = text or (
-        "Пожалуйста, расскажите о себе в нескольких предложениях. Ниже приведен пример:\n"
-        "Привет! Меня зовут Катя. Я профессионально занимаюсь маникюром и педикюром."
+        "Пожалуйста, расскажите о себе в нескольких предложениях.\n"
+        f"Максимальная длина текста - {Config.USER_DESCRIPTION_MAX_LENGTH} символов.\n"
+        "Разрешено использовать *буквы*, *цифры*, *знак пробел* и *знаки -.,!?:)(*.\n"
+        "Пример: Привет! Меня зовут Катя. Я профессионально занимаюсь маникюром и педикюром."
     )
-    await message.answer(text=text, reply_markup=keyboard)
+    await message.answer(text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
 
 
-async def _handle_start_edit_description(callback: CallbackQuery) -> None:
+async def _handle_start_edit_description(
+    callback: CallbackQuery = None,
+    message: Message = None,
+    keyboard: Union[InlineKeyboardMarkup, ReplyKeyboardMarkup] = None,
+) -> None:
     """
     Activates when client going to edit description.
     """
+    if not callback and not message:
+        raise NoTelegramUpdateObject("Neither callback nor message is specified.")
     text = (
-        "Пожалуйста, расскажите о себе в нескольких предложениях. Ниже приведен пример:\n"
-        "Привет! Меня зовут Катя. Я профессионально занимаюсь маникюром и педикюром."
+        "Пожалуйста, расскажите о себе в нескольких предложениях.\n"
+        f"Максимальная длина текста - {Config.USER_DESCRIPTION_MAX_LENGTH} символов.\n"
+        "Разрешено использовать *буквы*, *цифры*, *знак пробел* и *знаки -.,!?:)(*.\n"
+        "Пример: Привет! Меня зовут Катя. Я профессионально занимаюсь маникюром и педикюром."
     )
-    await callback.message.answer(text=text)
+    if callback:
+        await callback.message.answer(text=text, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard)
+    else:
+        await message.answer(text=text, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard)
 
 
 async def _handle_description(
@@ -270,9 +329,39 @@ async def _handle_description(
     next_state: State,
     text: str = None,
     keyboard: Union[InlineKeyboardMarkup, ReplyKeyboardMarkup] = None,
+    edit_mode: bool = False,
 ) -> None:
+    description = message.text.strip()
+    invalid_description = False
+    if len(description) > Config.USER_DESCRIPTION_MAX_LENGTH:
+        invalid_description = True
+        text = (
+            f"Вы ввели слишком длинное описание (максимально допустимая длина: {Config.USER_DESCRIPTION_MAX_LENGTH})."
+        )
+    elif not RegistrationConstants.USER_VALID_DESCRIPTION.match(description):
+        invalid_description = True
+        text = f"Вы ввели некорректное описание. "
+    if invalid_description:
+        await message.answer(text=text)
+        await _handle_start_edit_description(message=message, keyboard=keyboard)
+        return
+    if not edit_mode:
+        where_clause = WhereClause(
+            params=[user_table.c.telegram_id, user_table.c.telegram_profile],
+            values=[telegram_id, None],
+            comparison_operators=["==", "!="],
+        )
+        telegram_profile_specified = await User(engine=engine, logger=logger).read_user_info(where_clause=where_clause)
+        if not telegram_profile_specified:
+            text = (
+                "Пожалуйста, введите название вашего профиля в Telegram (его можно увидеть в разделе 'Настройки' -> "
+                "'Мой профиль' -> 'Имя Пользователя'). Или нажмите на кнопку 'Пропустить'."
+            )
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="Пропустить", callback_data=RegistrationConstants.SKIP)]]
+            )
+            next_state = RegistrationForm.telegram_profile
     await state_obj.set_state(next_state)
-    description = message.text
     where_clause = WhereClause(
         params=[user_table.c.telegram_id],
         values=[telegram_id],
@@ -280,10 +369,6 @@ async def _handle_description(
     )
     data_to_set = {"description": description}
     await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
-    text = text or (
-        "Пожалуйста, введите название вашего профиля в Telegram (его можно увидеть в разделе 'Настройки' -> "
-        "'Мой профиль' -> 'Имя Пользователя')."
-    )
     await message.answer(text=text, reply_markup=keyboard)
 
 
@@ -293,27 +378,33 @@ async def _handle_name(
     message: Message,
     state_obj: FSMContext,
     next_state: State,
-    callback: CallbackQuery = False,
     edit_mode: bool = False,
     text: str = None,
-    update_current_message: bool = False,
     keyboard: Union[InlineKeyboardMarkup, ReplyKeyboardMarkup] = None,
 ) -> None:
-    if not callback and not message:
-        raise NoTelegramUpdateObject("Neither callback nor message is specified.")
-    if len(message.text) > Config.USER_NAME_MAX_LENGTH:
-        text = f"Вы ввели слишком длинное имя (максимально допустимая длина: {Config.USER_NAME_MAX_LENGTH})"
-        if edit_mode:
-            await state_obj.set_state(RegistrationForm.edit_name)
-        if callback:
-            await callback.message.answer(text=text)
-            await handle_start_edit_name(callback=callback)
-        else:
-            await message.answer(text=text)
-            await handle_start_edit_name(message=message)
+    invalid_name = False
+    name = message.text.strip()
+    if len(name) > Config.USER_NAME_MAX_LENGTH:
+        invalid_name = True
+        text = f"Вы ввели слишком длинное имя (максимально допустимая длина: {Config.USER_NAME_MAX_LENGTH})."
+    elif not RegistrationConstants.USER_VALID_NAME.match(name):
+        invalid_name = True
+        text = f"Вы ввели некорректное имя."
+    elif await User(engine=engine, logger=logger).read_user_info(
+        where_clause=WhereClause(
+            params=[user_table.c.name],
+            values=[name],
+            comparison_operators=["=="]
+        ),
+        limit=1,
+    ):
+        invalid_name = True
+        text = f"К сожалению, это имя уже занято."
+    if invalid_name:
+        await message.answer(text=text)
+        await handle_start_edit_name(message=message)
         return
     await state_obj.set_state(next_state)
-    name = message.text
     where_clause = WhereClause(
         params=[user_table.c.telegram_id],
         values=[telegram_id],
@@ -322,18 +413,7 @@ async def _handle_name(
     data_to_set = {"name": name}
     await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
     if edit_mode:
-        if message:
-            await message.answer(text=text, reply_markup=keyboard)
-        else:
-            if update_current_message:
-                await bot.edit_message_text(
-                    text=text,
-                    chat_id=callback.message.chat.id,
-                    message_id=callback.message.message_id,
-                    reply_markup=keyboard,
-                )
-            else:
-                await callback.message.answer(text=text, reply_markup=keyboard)
+        await message.answer(text=text, reply_markup=keyboard)
     else:
         await _handle_pick_service(telegram_id=telegram_id, logger=logger, message=message)
 
@@ -363,7 +443,7 @@ async def _handle_telegram_profile(
 ):
     if not callback and not message:
         raise NoTelegramUpdateObject("Neither callback nor message is specified.")
-    telegram_profile = message.text.strip().lstrip("@")
+    telegram_profile = message.text.strip().strip("@")
     if len(telegram_profile) < 5:
         text = "Длина названия телеграм профиля не может быть меньше 5 символов."
         keyboard = None
@@ -451,7 +531,7 @@ async def _handle_sub_service(callback: CallbackQuery, client_picks: bool = Fals
 @registration_form_router.message(RegistrationForm.edit_name)
 async def handle_name_edit(message: Message, state: FSMContext) -> None:
     """
-    Activates when user is going to edit his name.
+    Activates when user has specified name during edit process.
     :param message: 
     :param state: 
     :return: 
@@ -634,12 +714,17 @@ async def handle_phone_number(message: Message, state: FSMContext) -> None:
     logger = get_logger()
     log_handler_info(handler_name="reg_form.handle_phone_number", logger=logger, message_text=message.text)
     telegram_id = str(message.chat.id)
+    text = (
+        "Пожалуйста, введите название вашего профиля в Instagram.\n"
+        f"Максимальная длина - {Config.USER_INSTAGRAM_MAX_LENGTH} символов.\n"
+        "Разрешено использовать *буквы латинского алфавита*, *цифры*, *знак нижнего подчеркивания (_)* и *точки (.)*."
+    )
     await _handle_phone_number(
         telegram_id=telegram_id,
         logger=logger,
         state_obj=state,
         next_state=RegistrationForm.instagram_link,
-        text="Пожалуйста, введите название вашего профиля в instagram или нажмите 'Пропустить'.",
+        text=text,
         message=message,
     )
 
@@ -679,14 +764,16 @@ async def handle_instagram_link_skip(callback: CallbackQuery, state: FSMContext)
     logger = get_logger()
     log_handler_info(handler_name="reg_form.handle_instagram_link_skip", logger=logger, callback_data=callback.data)
     text = (
-        "Пожалуйста, расскажите о себе в нескольких предложениях. Ниже приведен пример:\n"
-        "Привет! Меня зовут Катя. Я профессионально занимаюсь маникюром и педикюром."
+        "Пожалуйста, расскажите о себе в нескольких предложениях.\n"
+        f"Максимальная длина текста - {Config.USER_DESCRIPTION_MAX_LENGTH} символов.\n"
+        "Разрешено использовать *буквы*, *цифры*, *знак пробел* и *знаки -.,!?:)(*.\n"
+        "Пример: Привет! Меня зовут Катя. Я профессионально занимаюсь маникюром и педикюром."
     )
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="Пропустить", callback_data=RegistrationConstants.SKIP)]]
     )
     await state.set_state(RegistrationForm.description)
-    await callback.message.answer(text=text, reply_markup=keyboard)
+    await callback.message.answer(text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
 
 
 @registration_form_router.message(RegistrationForm.instagram_link)
@@ -716,7 +803,7 @@ async def handle_instagram_link(message: Message, state: FSMContext) -> None:
 @registration_form_router.message(RegistrationForm.edit_instagram_link)
 async def handle_instagram_link_edit(message: Message, state: FSMContext) -> None:
     """
-    Activates when user is going to edit his instagram link.
+    Activates when has specified instagram during edit process.
     :param message: 
     :param state: 
     :return: 
@@ -768,7 +855,7 @@ async def handle_description_skip(callback: CallbackQuery, state: FSMContext) ->
         keyboard = edit_profile_keyboard()
         next_state = RegistrationForm.edit
     await state.set_state(next_state)
-    await callback.message.answer(text=text, reply_markup=keyboard)
+    await callback.message.answer(text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
 
 
 @registration_form_router.message(RegistrationForm.description)
@@ -782,40 +869,23 @@ async def handle_description(message: Message, state: FSMContext) -> None:
     logger = get_logger()
     log_handler_info(handler_name="reg_form.handle_description", logger=logger, message_text=message.text)
     telegram_id = str(message.chat.id)
-    where_clause = WhereClause(
-        params=[user_table.c.telegram_id, user_table.c.telegram_profile],
-        values=[telegram_id, None],
-        comparison_operators=["==", "!="],
-    )
-    telegram_profile_specified = await User(engine=engine, logger=logger).read_user_info(where_clause=where_clause)
-    if not telegram_profile_specified:
-        text = (
-            "Пожалуйста, введите название вашего профиля в Telegram (его можно увидеть в разделе 'Настройки' -> "
-            "'Мой профиль' -> 'Имя Пользователя'). Или нажмите на кнопку 'Пропустить'."
-        )
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="Пропустить", callback_data=RegistrationConstants.SKIP)]]
-        )
-        next_state = RegistrationForm.telegram_profile
-    else:
-        text = "Ваша регистрация почти окончена! Хотите что-нибудь изменить?"
-        keyboard = edit_profile_keyboard()
-        next_state = RegistrationForm.edit
+    text = "Ваша регистрация почти окончена! Хотите что-нибудь изменить?"
+    keyboard = edit_profile_keyboard()
     await _handle_description(
         telegram_id=telegram_id,
         logger=logger,
         message=message,
         state_obj=state,
-        next_state=next_state,
+        next_state=RegistrationForm.edit,
+        text=text,
         keyboard=keyboard,
-        text=text
     )
 
 
 @registration_form_router.message(RegistrationForm.edit_description)
 async def handle_description_edit(message: Message, state: FSMContext) -> None:
     """
-    Activates when user is going to edit his description.
+    Activates when has specified description during edit process.
     :param message: 
     :param state: 
     :return: 
@@ -833,6 +903,7 @@ async def handle_description_edit(message: Message, state: FSMContext) -> None:
         next_state=RegistrationForm.edit,
         text=text,
         keyboard=keyboard,
+        edit_mode=True,
     )
 
 
@@ -875,7 +946,7 @@ async def handle_telegram_profile(message: Message, state: FSMContext) -> None:
 @registration_form_router.message(RegistrationForm.edit_telegram_profile)
 async def handle_telegram_profile_edit(message: Message, state: FSMContext) -> None:
     """
-    Activates when user is going to edit his telegram_profile.
+    Activates when has specified telegram_profile during edit process.
     :param message:
     :param state:
     :return:

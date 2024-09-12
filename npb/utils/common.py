@@ -22,6 +22,7 @@ from npb.exceptions import UserNotFound, UserParamNotFound, NoTelegramUpdateObje
 from npb.logger import get_logger
 from npb.config import MasterConstants
 from npb.exceptions import CalendarError
+from npb.text import bp
 from npb.tg.bot import bot
 from npb.exceptions import CouldNotNotify
 
@@ -63,32 +64,59 @@ async def get_user_data(
         return data
 
 
-def _prepare_user_info(user: Row, for_master: bool = False):
+def escape_markdown(text: str) -> str:
+    """
+    Escape markdown symbol according to https://core.telegram.org/bots/api#markdown-style .
+    :return: String with escaped markdown symbols.
+    """
+    replacements = {
+        '_': r'\_',
+        # '*': r'\*', activate rest if needed, for now just underscore (to reduce overhead)
+        # '`': r'\`',
+        # '[': r'\[',
+    }
+    for symbol, escaped in replacements.items():
+        text = text.replace(symbol, escaped)
+
+    return text
+
+
+def _prepare_user_info(user: Row, for_master: bool = False) -> str:
+    """
+    Подготовка информации о пользователе.
+    :param user: User.
+    :param for_master: Информация для показа мастеру или клиенту.
+    :return: Информация о пользователе.
+    """
     text = ""
+    #  hint: param = (parameter name, parameter value, escape markdown)
     if for_master:
         params = (
-            ("*контактный номер:*\n%s\n\n", user.phone_number),
-            ("*профиль в телеграм:*\n@%s\n\n", user.telegram_profile),
+            ("*контактный номер:*\n%s\n\n", user.phone_number, False),
+            ("*профиль в телеграм:*\n@%s\n\n", user.telegram_profile, False),
         )
     else:
         if user.services:
             services_as_string = []
             for service, sub_services in user.services.items():
-                services_as_string.append(f"{service}:\n    {', '.join(list(sub_services.keys()))}\n")
+                services_as_string.append(f"*{bp} {service}*:\n{', '.join(list(sub_services.keys()))}\n")
             services_as_string = "".join(services_as_string)
         else:
             services_as_string = ""
         params = (
-            ("*телеграм:*\n@%s\n\n", user.telegram_profile),
-            ("*имя:*\n%s\n\n", user.name),
-            ("*услуги:*\n%s\n", services_as_string),
-            ("*контактный номер:*\n%s\n\n", user.phone_number),
-            ("*профиль в инстаграм:*\n%s\n\n", user.instagram_link),
-            ("*описание:*\n%s\n", user.description),
+            ("*телеграм:*\n@%s\n\n", user.telegram_profile, True),
+            ("*имя:*\n%s\n\n", user.name, False),
+            ("*услуги:*\n%s\n", services_as_string, False),
+            ("*контактный номер:*\n%s\n\n", user.phone_number, False),
+            ("*профиль в инстаграм:*\n%s\n\n", user.instagram_link, True),
+            ("*описание:*\n%s\n", user.description, False),
         )
     for param in params:
         if param[1]:
-            text += param[0] % param[1]
+            if param[2]:
+                text += param[0] % escape_markdown(param[1])
+            else:
+                text += param[0] % param[1]
     return text
 
 
@@ -181,9 +209,10 @@ async def handle_start_edit_name(callback: CallbackQuery = None, message: Messag
     if not callback and not message:
         raise NoTelegramUpdateObject("Neither callback nor message is specified.")
     text = (
-        "Пожалуйста, введите название Вашего салона или Ваш никнейм. Это имя будут видеть Клиенты, поэтому "
-        f"постарайтесь сделать его *уникальным*. Максимальная длина - *{Config.USER_NAME_MAX_LENGTH} символов*. "
-        f"Примеры:\n - Салон PrettyNails\n - Мастер по ногтям Кристина Филлипова\n - 💅🏻 Ангелина Романова 💅🏻"
+        "Пожалуйста, введите название Вашего салона или Ваше имя (Это имя будут видеть Клиенты).\n"
+        f"Максимальная длина - {Config.USER_NAME_MAX_LENGTH} символов.\n"
+        "Разрешено использовать *буквы*, *цифры*, *знак тире (-)* и *знак пробел*.\n"
+        "Примеры:\n - Салон PrettyNails\n - Мастер по ногтям Кристина Филлипова\n - Мастер Ангелина Романова"
     )
     if callback:
         await callback.message.answer(text=text, parse_mode=ParseMode.MARKDOWN)
@@ -372,11 +401,3 @@ async def cancel_appointment_and_notify_user(user: Row, logger: Logger, for_mast
     await notify_user(text=notification_text, telegram_id=telegram_id, logger=logger)
 
 
-def contains_telegram_markdown(text: str) -> bool:
-    """
-    Checks if the input text contains Telegram Markdown syntax.
-
-    :param text: The input text to check.
-    :return: True if Telegram Markdown syntax is detected, False otherwise.
-    """
-    return Config.TELEGRAM_MARKDOWN_PATTERN.search(text) is not None

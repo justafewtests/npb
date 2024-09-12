@@ -18,6 +18,7 @@ class Config:
     TELEGRAM_WEBHOOK_PORT = int(environ.get("TELEGRAM_WEBHOOK_PORT", "443"))
     TELEGRAM_WEBHOOK_PATH = "/webhook"
     TELEGRAM_WEBHOOK_URL = f"https://{TELEGRAM_WEBHOOK_HOST}:{TELEGRAM_WEBHOOK_PORT}{TELEGRAM_WEBHOOK_PATH}"
+    TELEGRAM_WEBHOOK_URL = f"https://f508-178-91-106-8.ngrok-free.app/webhook"
     DB_DSN = environ.get("POSTGRES_DSN")
     MASTER_SERVICES = {
         "Ресницы": ["Удлинение", "Наращивание", "Ламинирование", "Биозавивка", "Коррекция", "Окрашивание"],
@@ -44,6 +45,8 @@ class Config:
     ADMIN_TG = "@fl1p3mth3b1rd"
     TZ_OFFSET = 0
     USER_NAME_MAX_LENGTH = 50
+    USER_INSTAGRAM_MAX_LENGTH = 30
+    USER_DESCRIPTION_MAX_LENGTH = 500
     MAX_NUMBER_OF_MASTERS_TO_SHOW = 10
     MIN_USER_EVENT_COOLDOWN = 0.5
     FLOOD_THRESHOLD = 5
@@ -61,18 +64,6 @@ class Config:
     ENVIRONMENT = environ.get("ENVIRONMENT", "test")
     FORCE_SET_WEBHOOK = environ.get("FORCE_SET_WEBHOOK", False)
     MAX_PROCESSED_UNIQUE_UPDATES = 500
-    TELEGRAM_MARKDOWN_PATTERN = re.compile(
-        r'\*.*?\*'            # Bold (e.g., *bold*)
-        r'|_.*?_ '            # Italics (e.g., _italic_)
-        r'|`.*?`'            # Inline code (e.g., `code`)
-        r'|```.*?```'        # Code blocks (e.g., ```code block```), re.DOTALL handles multi-line
-        r'|!\[.*?\]\(.*?\)'  # Images (e.g., ![alt](url))
-        r'|\[.*?\]\(.*?\)'   # Links (e.g., [text](url))
-        r'|^[\*\-\+]\s'      # List items (e.g., * item, - item, + item), re.MULTILINE handles line breaks
-        r'|^\d+\.\s'         # Ordered list (e.g., 1. item)
-        r'|^#\s',            # Headers (e.g., # Header)
-        re.MULTILINE | re.DOTALL
-    )
 
 
 class AdminConstants:
@@ -164,3 +155,6 @@ class RegistrationConstants:
     DONE_SUB_SERVICE = "reg.done_sub_service"
     DONE_SERVICE = "reg.done_service"
     SKIP = "reg.skip"
+    USER_VALID_NAME = re.compile(r'^[a-zA-Zа-яА-Я0-9- ]+$')
+    USER_VALID_DESCRIPTION = re.compile(r'^[a-zA-Zа-яА-Я0-9- .,!?:)(]+$')
+    USER_VALID_INSTAGRAM = re.compile(r'^[a-zA-Z0-9._]+$')

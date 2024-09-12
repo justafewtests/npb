@@ -4,8 +4,7 @@ from typing import Dict, List
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from npb.state_machine.registration_form_states import RegistrationForm
-from npb.config import CommonConstants, RegistrationConstants
-
+from npb.config import CommonConstants, RegistrationConstants, Config
 
 FINISH_FORM_BUTTON_MAP = {
     "change_name": RegistrationForm.name,
