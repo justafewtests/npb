@@ -435,7 +435,7 @@ async def handle_master_or_filter(callback: CallbackQuery, state: FSMContext) ->
         current_service = user.current_service
         sub_services = Config.MASTER_SERVICES[current_service]
         keyboard = pick_sub_service_keyboard(sub_services, all_picked_services, current_service)
-        text = pick_sub_service_text
+        text = pick_sub_service_text % current_service
         await bot.edit_message_text(
             text=text,
             chat_id=callback.message.chat.id,

@@ -264,7 +264,7 @@ async def _handle_instagram_link(
     elif not RegistrationConstants.USER_VALID_INSTAGRAM.match(instagram_profile):
         invalid_instagram_profile = True
         text = "Вы ввели некорректное название."
-    elif await User(engine=engine, logger=logger).read_user_info(
+    elif user_with_same_instagram := await User(engine=engine, logger=logger).read_user_info(
         where_clause=WhereClause(
             params=[user_table.c.instagram_link],
             values=[instagram_link],
@@ -272,8 +272,9 @@ async def _handle_instagram_link(
         ),
         limit=1,
     ):
-        invalid_instagram_profile = True
-        text = f"К сожалению, это название уже занято."
+        if user_with_same_instagram[0].telegram_id != telegram_id:
+            invalid_instagram_profile = True
+            text = f"К сожалению, это название уже занято."
     if invalid_instagram_profile:
         await message.answer(text=text)
         await _handle_start_edit_instagram_link(message=message, provide_hint=True)
@@ -373,7 +374,7 @@ async def _handle_name(
     elif not RegistrationConstants.USER_VALID_NAME.match(name):
         invalid_name = True
         text = f"Вы ввели некорректное имя."
-    elif await User(engine=engine, logger=logger).read_user_info(
+    elif user_with_same_name := await User(engine=engine, logger=logger).read_user_info(
         where_clause=WhereClause(
             params=[user_table.c.name],
             values=[name],
@@ -381,8 +382,9 @@ async def _handle_name(
         ),
         limit=1,
     ):
-        invalid_name = True
-        text = f"К сожалению, это имя уже занято."
+        if user_with_same_name[0].telegram_id != telegram_id:
+            invalid_name = True
+            text = f"К сожалению, это имя уже занято."
     if invalid_name:
         await message.answer(text=text)
         await handle_start_edit_name(message=message)
