@@ -10,6 +10,7 @@ from aiogram import Router
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -54,7 +55,7 @@ master_router = Router()
 
 async def _handle_my_timetable(
     callback: CallbackQuery,
-    state_obj: str = None,
+    next_state: State = None,
     edit_mode: str = None,
     year: int = None,
     month: int = None,
@@ -96,7 +97,7 @@ async def _handle_my_timetable(
         "current_month": now.month,
         "current_year": now.year,
         "current_calendar": {},
-        "state": state_obj,
+        "state": next_state.state,
         "edit_mode": edit_mode,
     }
     await User(engine=engine, logger=logger).update_user_info(where_clause=user_where_clause, data_to_set=data_to_set)
@@ -183,7 +184,6 @@ async def _handle_time_slot_check(callback: CallbackQuery, state: FSMContext) ->
             text = f"На {date_and_time} еще никто не записан."
             await callback.answer(text=text)
         else:
-            await state.set_state(Master.edit_time)
             appointment_where_clause = WhereClause(
                 params=[appointment_table.c.auid],
                 values=[callback.data],
@@ -226,7 +226,10 @@ async def _handle_time_slot_check(callback: CallbackQuery, state: FSMContext) ->
                 values=[telegram_id],
                 comparison_operators=["=="],
             )
-            data_to_set = {"current_appointment": str(appointments_and_client_info[0].auid)}
+            data_to_set = {
+                "current_appointment": str(appointments_and_client_info[0].auid),
+                "state": Master.edit_time.state,
+            }
             await User(engine=engine, logger=logger).update_user_info(
                 data_to_set=data_to_set,
                 where_clause=user_where_clause,
@@ -403,7 +406,7 @@ async def handle_my_timetable(callback: CallbackQuery, state: FSMContext) -> Non
     """
     logger = get_logger()
     log_handler_info(handler_name="master.handle_my_timetable", logger=logger, callback_data=callback.data)
-    await _handle_my_timetable(callback=callback, state_obj=Master.edit_timetable.state, edit_mode=None)
+    await _handle_my_timetable(callback=callback, next_state=Master.edit_timetable, edit_mode=None)
 
 
 @master_router.callback_query(Master.edit_timetable, F.data == MasterConstants.EDIT_TIMETABLE)
@@ -417,7 +420,7 @@ async def handle_edit_timetable_start(callback: CallbackQuery, state: FSMContext
     user = await User(engine=engine, logger=logger).read_single_user_info(tg_user_id=telegram_id)
     await _handle_my_timetable(
         callback=callback,
-        state_obj=Master.edit_timetable.state,
+        next_state=Master.edit_timetable,
         edit_mode="1",
         year=user.current_year,
         month=user.current_month,
@@ -435,7 +438,7 @@ async def handle_edit_timetable_cancel(callback: CallbackQuery, state: FSMContex
     user = await User(engine=engine, logger=logger).read_single_user_info(tg_user_id=telegram_id)
     await _handle_my_timetable(
         callback=callback,
-        state_obj=Master.edit_timetable.state,
+        next_state=Master.edit_timetable,
         edit_mode=None,
         year=user.current_year,
         month=user.current_month,
@@ -474,7 +477,7 @@ async def handle_edit_timetable_bulk_start(callback: CallbackQuery, state: FSMCo
         await callback.message.answer(text=text)
         await _handle_my_timetable(
             callback=callback,
-            state_obj=Master.edit_timetable.state,
+            next_state=Master.edit_timetable,
             edit_mode="1",
             year=user.current_year,
             month=user.current_month,
@@ -491,10 +494,9 @@ async def handle_edit_timetable_bulk_cancel(callback: CallbackQuery, state: FSMC
     logger = get_logger()
     log_handler_info(handler_name="master.handle_edit_timetable_bulk_cancel", logger=logger, callback_data=callback.data)
     user = await User(engine=engine, logger=logger).read_single_user_info(tg_user_id=telegram_id)
-    await state.set_state(Master.edit_timetable)
     await _handle_my_timetable(
         callback=callback,
-        state_obj=Master.edit_timetable.state,
+        next_state=Master.edit_timetable,
         edit_mode="1",
         year=user.current_year,
         month=user.current_month,
@@ -707,7 +709,7 @@ async def handle_day_check_cancel(callback: CallbackQuery, state: FSMContext) ->
     user = await User(engine=engine, logger=logger).read_single_user_info(tg_user_id=telegram_id)
     await _handle_my_timetable(
         callback=callback,
-        state_obj=Master.edit_timetable.state,
+        next_state=Master.edit_timetable,
         edit_mode=None,
         year=user.current_year,
         month=user.current_month,

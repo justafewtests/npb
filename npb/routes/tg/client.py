@@ -47,7 +47,8 @@ async def _handle_service(
     picked_service: str = None,
     picked_sub_services: Dict[str, bool] = None,
     text: str = None,
-    page_number: int = None
+    page_number: int = None,
+    next_state: State = None,
 ) -> None:
     """
     Activates when client has already picked service.
@@ -70,6 +71,8 @@ async def _handle_service(
             "current_sub_service": None,
             "services": {picked_service: {}}
         }
+        if next_state:
+            data_to_set["state"] = next_state.state
         await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
     text = text or "Пожалуйста, выберите Мастера (или нажмите на 'Фильтр', чтобы выбрать подуслуги)"
     await bot.edit_message_text(
@@ -176,6 +179,7 @@ async def _handle_pick_day(
     telegram_id: str,
     arrows: bool = False,
     callback: CallbackQuery = None,
+    next_state: State = None,
 ) -> Tuple[int, int, InlineKeyboardMarkup]:
     if arrows:
         current_month, current_year = get_month(
@@ -209,6 +213,8 @@ async def _handle_pick_day(
         comparison_operators=["=="]
     )
     data_to_set = {"current_month": int(current_month), "current_year": int(current_year)}
+    if next_state:
+        data_to_set["state"] = next_state.state
     await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
     return current_month, current_year, keyboard
 
@@ -393,8 +399,7 @@ async def handle_service(callback: CallbackQuery, state: FSMContext) -> None:
     """
     logger = get_logger()
     log_handler_info(handler_name="client.handle_service", logger=logger, callback_data=callback.data)
-    await state.set_state(Client.master_or_filter)
-    await _handle_service(callback=callback)
+    await _handle_service(callback=callback, next_state=Client.master_or_filter)
 
 
 @client_router.callback_query(
@@ -458,8 +463,12 @@ async def handle_sub_service_done(callback: CallbackQuery, state: FSMContext) ->
     picked_service, picked_sub_services = await get_picked_services_and_sub_services(
         engine=engine, logger=logger, telegram_id=telegram_id
     )
-    await state.set_state(Client.master_or_filter)
-    await _handle_service(callback=callback, picked_service=picked_service, picked_sub_services=picked_sub_services)
+    await _handle_service(
+        callback=callback,
+        picked_service=picked_service,
+        picked_sub_services=picked_sub_services,
+        next_state=Client.master_or_filter,
+    )
 
 
 @client_router.callback_query(Client.sub_service)
@@ -483,8 +492,12 @@ async def handle_master_cancel(callback: CallbackQuery, state: FSMContext) -> No
     user = await User(engine=engine, logger=logger).read_single_user_info(tg_user_id=telegram_id)
     current_service = user.current_service
     current_page = user.current_page
-    await state.set_state(Client.master_or_filter)
-    await _handle_service(callback=callback, picked_service=current_service, page_number=current_page)
+    await _handle_service(
+        callback=callback,
+        picked_service=current_service,
+        page_number=current_page,
+        next_state=Client.master_or_filter
+    )
 
 
 @client_router.callback_query(Client.master)
@@ -531,9 +544,12 @@ async def handle_make_appointment_start(callback: CallbackQuery, state: FSMConte
         picked_service, picked_sub_services = await get_picked_services_and_sub_services(
             engine=engine, logger=logger, telegram_id=telegram_id
         )
-        await state.set_state(Client.master_or_filter)
         await _handle_service(
-            callback=callback, picked_service=picked_service, picked_sub_services=picked_sub_services, text=text
+            callback=callback,
+            picked_service=picked_service,
+            picked_sub_services=picked_sub_services,
+            text=text,
+            next_state=Client.master_or_filter
         )
         return
     else:
@@ -618,13 +634,13 @@ async def handle_make_appointment_time_cancel(callback: CallbackQuery, state: FS
     text = (
         f"*{Config.MONTHS_MAP.get(user.current_month)[0]} {user.current_year}*\nПожалуйста, выберите день:"
     )
-    await state.set_state(Client.master_calendar_day)
     _, _, keyboard = await _handle_pick_day(
         callback=callback,
         logger=logger,
         current_month=user.current_month,
         current_year=user.current_year,
         telegram_id=user.current_master,
+        next_state=Client.master_calendar_day,
     )
     await bot.edit_message_text(
         text=text,
@@ -686,7 +702,6 @@ async def handle_specify_phone_number(message: Message, state: FSMContext) -> No
         telegram_id=telegram_id,
         logger=logger,
         message=message,
-        state_obj=state,
         next_state=Client.master_calendar_time,
         text=text,
         keyboard=keyboard,
@@ -727,7 +742,6 @@ async def handle_specify_telegram_profile(message: Message, state: FSMContext) -
         keyboard=keyboard,
         logger=logger,
         telegram_id=telegram_id,
-        state_obj=state,
     )
 
 
@@ -749,13 +763,13 @@ async def handle_make_appointment_time(callback: CallbackQuery, state: FSMContex
             f"Вы не можете создать больше записей у этого мастера в этот день.\n\n*"
             f"{Config.MONTHS_MAP.get(user.current_month)[0]} {user.current_year}*\nПожалуйста, выберите другой день:"
         )
-        await state.set_state(Client.master_calendar_day)
         _, _, keyboard = await _handle_pick_day(
             callback=callback,
             logger=logger,
             current_month=user.current_month,
             current_year=user.current_year,
             telegram_id=user.current_master,
+            next_state=Client.master_calendar_day,
         )
     elif not user.phone_number and not user.telegram_profile:
         text = (
@@ -794,13 +808,13 @@ async def handle_make_appointment_time(callback: CallbackQuery, state: FSMContex
                 f"попытке создать запись на выбранное время.\n\n*{Config.MONTHS_MAP.get(user.current_month)[0]} "
                 f"{user.current_year}*\nПожалуйста, выберите другой день:"
             )
-            await state.set_state(Client.master_calendar_day)
             _, _, keyboard = await _handle_pick_day(
                 callback=callback,
                 logger=logger,
                 current_month=user.current_month,
                 current_year=user.current_year,
                 telegram_id=user.current_master,
+                next_state=Client.master_calendar_day,
             )
         else:
             master = await User(engine=engine, logger=logger).read_single_user_info(tg_user_id=user.current_master)

@@ -102,13 +102,11 @@ async def _handle_pick_service(
 async def _hande_service(
     telegram_id: str,
     logger: Logger,
-    state_obj: FSMContext,
     next_state: State,
     text: str = None,
     callback: CallbackQuery = None,
     update_current_message: bool = False,
 ):
-    await state_obj.set_state(next_state)
     user = await User(engine=engine, logger=logger).read_single_user_info(tg_user_id=telegram_id)
     all_picked_services = user.services
     edit_mode = user.edit_mode
@@ -127,6 +125,7 @@ async def _hande_service(
         "services": all_picked_services,
         "current_service": picked_service,
         "edit_mode": edit_mode,
+        "state": next_state.state,
     }
     await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
     if update_current_message:
@@ -177,7 +176,6 @@ async def _handle_start_edit_phone_number(callback: CallbackQuery = None):
 async def _handle_phone_number(
     telegram_id: str,
     logger: Logger,
-    state_obj: FSMContext,
     next_state: State,
     text: str = None,
     message: Message = None,
@@ -197,7 +195,6 @@ async def _handle_phone_number(
         )
         keyboard = None
     else:
-        await state_obj.set_state(next_state)
         text = text or instagram_text
         where_clause = WhereClause(
             params=[user_table.c.telegram_id],
@@ -207,7 +204,7 @@ async def _handle_phone_number(
         keyboard = keyboard or InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="Пропустить", callback_data=RegistrationConstants.SKIP)]]
         )
-        data_to_set = {"phone_number": phone_number}
+        data_to_set = {"phone_number": phone_number, "state": next_state.state}
         await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
     if message:
         await message.answer(text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
@@ -250,7 +247,6 @@ async def _handle_instagram_link(
     telegram_id: str,
     logger: Logger,
     message: Message,
-    state_obj: FSMContext,
     next_state: State,
     text: str = None,
     keyboard: Union[InlineKeyboardMarkup, ReplyKeyboardMarkup] = None,
@@ -279,13 +275,12 @@ async def _handle_instagram_link(
         await message.answer(text=text)
         await _handle_start_edit_instagram_link(message=message, provide_hint=True)
         return
-    await state_obj.set_state(next_state)
     where_clause = WhereClause(
         params=[user_table.c.telegram_id],
         values=[telegram_id],
         comparison_operators=["=="]
     )
-    data_to_set = {"instagram_link": instagram_link}
+    data_to_set = {"instagram_link": instagram_link, "state": next_state.state}
     await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
     text = text or description_text
     await message.answer(text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
@@ -312,7 +307,6 @@ async def _handle_description(
     telegram_id: str,
     logger: Logger,
     message: Message,
-    state_obj: FSMContext,
     next_state: State,
     text: str = None,
     keyboard: Union[InlineKeyboardMarkup, ReplyKeyboardMarkup] = None,
@@ -345,13 +339,12 @@ async def _handle_description(
                 inline_keyboard=[[InlineKeyboardButton(text="Пропустить", callback_data=RegistrationConstants.SKIP)]]
             )
             next_state = RegistrationForm.telegram_profile
-    await state_obj.set_state(next_state)
     where_clause = WhereClause(
         params=[user_table.c.telegram_id],
         values=[telegram_id],
         comparison_operators=["=="]
     )
-    data_to_set = {"description": description}
+    data_to_set = {"description": description, "state": next_state.state}
     await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
     await message.answer(text=text, reply_markup=keyboard)
 
@@ -360,7 +353,6 @@ async def _handle_name(
     telegram_id: str,
     logger: Logger,
     message: Message,
-    state_obj: FSMContext,
     next_state: State,
     edit_mode: bool = False,
     text: str = None,
@@ -389,13 +381,12 @@ async def _handle_name(
         await message.answer(text=text)
         await handle_start_edit_name(message=message)
         return
-    await state_obj.set_state(next_state)
     where_clause = WhereClause(
         params=[user_table.c.telegram_id],
         values=[telegram_id],
         comparison_operators=["=="]
     )
-    data_to_set = {"name": name}
+    data_to_set = {"name": name, "state": next_state.state}
     await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
     if edit_mode:
         await message.answer(text=text, reply_markup=keyboard)
@@ -415,7 +406,6 @@ async def _handle_start_edit_telegram_profile(
 async def _handle_telegram_profile(
     telegram_id: str,
     logger: Logger,
-    state_obj: FSMContext,
     next_state: State,
     text: str = None,
     message: Message = None,
@@ -436,7 +426,6 @@ async def _handle_telegram_profile(
         text = "Название профиля должно состоять только из латинских букв, цифр, и символов нижнего подчёркивания '_'."
         keyboard = None
     else:
-        await state_obj.set_state(next_state)
         text = text or registration_almost_finished_text
         where_clause = WhereClause(
             params=[user_table.c.telegram_id], values=[telegram_id], comparison_operators=["=="]
@@ -527,7 +516,6 @@ async def handle_name_edit(message: Message, state: FSMContext) -> None:
         telegram_id=telegram_id,
         logger=logger,
         message=message,
-        state_obj=state,
         next_state=RegistrationForm.edit,
         edit_mode=True,
         text=text,
@@ -550,7 +538,6 @@ async def handle_name(message: Message, state: FSMContext) -> None:
         telegram_id=telegram_id,
         logger=logger,
         message=message,
-        state_obj=state,
         next_state=RegistrationForm.service,
     )
 
@@ -657,7 +644,6 @@ async def handle_service(callback: CallbackQuery, state: FSMContext) -> None:
     await _hande_service(
         telegram_id=telegram_id,
         logger=logger,
-        state_obj=state,
         next_state=RegistrationForm.sub_service,
         callback=callback,
         update_current_message=True,
@@ -700,7 +686,6 @@ async def handle_phone_number(message: Message, state: FSMContext) -> None:
     await _handle_phone_number(
         telegram_id=telegram_id,
         logger=logger,
-        state_obj=state,
         next_state=RegistrationForm.instagram_link,
         text=text,
         message=message,
@@ -724,7 +709,6 @@ async def handle_phone_number_edit(message: Message, state: FSMContext) -> None:
         telegram_id=telegram_id,
         logger=logger,
         message=message,
-        state_obj=state,
         next_state=RegistrationForm.edit,
         text=text,
         keyboard=keyboard,
@@ -767,7 +751,6 @@ async def handle_instagram_link(message: Message, state: FSMContext) -> None:
         telegram_id=telegram_id,
         logger=logger,
         message=message,
-        state_obj=state,
         next_state=RegistrationForm.description,
         keyboard=keyboard
     )
@@ -790,7 +773,6 @@ async def handle_instagram_link_edit(message: Message, state: FSMContext) -> Non
         telegram_id=telegram_id,
         logger=logger,
         message=message,
-        state_obj=state,
         next_state=RegistrationForm.edit,
         text=text,
         keyboard=keyboard,
@@ -845,7 +827,6 @@ async def handle_description(message: Message, state: FSMContext) -> None:
         telegram_id=telegram_id,
         logger=logger,
         message=message,
-        state_obj=state,
         next_state=RegistrationForm.edit,
         text=text,
         keyboard=keyboard,
@@ -869,7 +850,6 @@ async def handle_description_edit(message: Message, state: FSMContext) -> None:
         telegram_id=telegram_id,
         logger=logger,
         message=message,
-        state_obj=state,
         next_state=RegistrationForm.edit,
         text=text,
         keyboard=keyboard,
@@ -906,7 +886,6 @@ async def handle_telegram_profile(message: Message, state: FSMContext) -> None:
     await _handle_telegram_profile(
         telegram_id=telegram_id,
         logger=logger,
-        state_obj=state,
         next_state=RegistrationForm.edit,
         message=message,
         keyboard=keyboard,
@@ -930,7 +909,6 @@ async def handle_telegram_profile_edit(message: Message, state: FSMContext) -> N
         telegram_id=telegram_id,
         logger=logger,
         message=message,
-        state_obj=state,
         next_state=RegistrationForm.edit,
         text=text,
         keyboard=keyboard,
