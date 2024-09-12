@@ -26,6 +26,7 @@ from npb.db.utils import WhereClause, Join
 from npb.db.core import engine
 from npb.logger import get_logger
 from npb.state_machine.client_states import Client
+from npb.text.client import pick_sub_service_text, month_appointments_text, pick_time_text
 from npb.tg.bot import bot
 from npb.tg.models import AppointmentModel
 from npb.utils.tg.client import pick_master_keyboard, pick_day_keyboard, my_appointments_keyboard, \
@@ -130,7 +131,7 @@ async def _handle_filter(callback: CallbackQuery) -> None:
     telegram_id = str(callback.message.chat.id)
     user = await User(engine=engine, logger=logger).read_single_user_info(tg_user_id=telegram_id)
     picked_service = user.current_service
-    text = f"Пожалуйста, выберите подуслуги для услуги {picked_service} из списка:"
+    text = pick_sub_service_text
     sub_services = Config.MASTER_SERVICES[picked_service]
     keyboard = pick_sub_service_keyboard(sub_services, {}, picked_service)
     await bot.edit_message_text(
@@ -158,10 +159,7 @@ async def _handle_my_appointments_start(
         logger=logger,
         now=now,
     )
-    text = text or (
-        f"Ваши записи на {Config.MONTHS_MAP.get(month)[0]} {now.year}. Нажмите на запись, чтобы получить более "
-        f"подробную информацию, или выберите другой месяц."
-    )
+    text = text or month_appointments_text % (Config.MONTHS_MAP.get(month)[0], now.year)
     await bot.edit_message_text(
         text=text,
         chat_id=callback.message.chat.id,
@@ -226,9 +224,8 @@ async def _handle_pick_time(
     current_day: int = None,
     text: str = None,
 ):
-    text = text or (
-        f"*{current_day or callback.data} {Config.MONTHS_MAP.get(current_month)[1]} {current_year}*\nПожалуйста, "
-        f"выберите время:"
+    text = text or pick_time_text % (
+        current_day or callback.data, Config.MONTHS_MAP.get(current_month)[1], current_year
     )
     tz = timezone(timedelta(hours=Config.TZ_OFFSET))
     if data_to_set is not None:
@@ -298,10 +295,7 @@ async def handle_my_appointments_cancel(callback: CallbackQuery, state: FSMConte
     else:  # отмена записи
         await cancel_appointment_and_notify_user(user=user, logger=logger, for_master=True, engine=engine)
         now = datetime.now()
-        text = (
-            f"Запись успешно отменена.\nВаши записи на {Config.MONTHS_MAP.get(now.month)[0]} {now.year}. "
-            f"Нажмите на запись, чтобы получить более подробную информацию, или выберите другой месяц."
-        )
+        text = f"Запись успешно отменена.\n{month_appointments_text % (Config.MONTHS_MAP.get(now.month)[0], now.year)}"
         await _handle_my_appointments_start(
             callback=callback, logger=logger, month=user.current_month, text=text, now=now
         )
@@ -441,7 +435,7 @@ async def handle_master_or_filter(callback: CallbackQuery, state: FSMContext) ->
         current_service = user.current_service
         sub_services = Config.MASTER_SERVICES[current_service]
         keyboard = pick_sub_service_keyboard(sub_services, all_picked_services, current_service)
-        text = f"Пожалуйста, выберите подуслуги для услуги {current_service} из списка:"
+        text = pick_sub_service_text
         await bot.edit_message_text(
             text=text,
             chat_id=callback.message.chat.id,
@@ -678,7 +672,7 @@ async def handle_specify_phone_number(message: Message, state: FSMContext) -> No
     )
     text = (
         f"Ваш номер телефона успешно сохранён!\n"
-        f"*{user.current_day} {Config.MONTHS_MAP.get(current_month)[1]} {current_year}*\nПожалуйста, выберите время:"
+        f"{pick_time_text % (user.current_day, Config.MONTHS_MAP.get(current_month)[1], current_year)}"
     )
     _, keyboard, _ = await _handle_pick_time(
         current_month=user.current_month,
@@ -716,7 +710,7 @@ async def handle_specify_telegram_profile(message: Message, state: FSMContext) -
     )
     text = (
         f"Название Вашего телеграм профиля успешно сохранёно! *{user.current_day} "
-        f"{Config.MONTHS_MAP.get(current_month)[1]} {current_year}*\nПожалуйста, выберите время:"
+        f"{pick_time_text % (user.current_day, Config.MONTHS_MAP.get(current_month)[1], current_year)}"
     )
     _, keyboard, _ = await _handle_pick_time(
         current_month=user.current_month,

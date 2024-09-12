@@ -27,6 +27,7 @@ from npb.db.sa_models import appointment_table, user_table
 from npb.db.utils import WhereClause, Join
 from npb.db.core import engine
 from npb.logger import get_logger
+from npb.text.master import pick_one_or_more_days_text, pick_day_to_check_timetable_text, wrong_time_format_text
 from npb.utils.common import (
     delete_appointment_keyboard,
     edit_profile_keyboard,
@@ -101,12 +102,9 @@ async def _handle_my_timetable(
     await User(engine=engine, logger=logger).update_user_info(where_clause=user_where_clause, data_to_set=data_to_set)
     text = f"*{Config.MONTHS_MAP.get(now.month)[0]} {now.year}*"
     if edit_mode:
-        text += (
-            f"\nВыберите один или несколько дней и нажмите 'Добавить время'. Время будет добавлено ко всем выбранным "
-            f"дням."
-        )
+        text += pick_one_or_more_days_text
     else:
-        text += "\nВыберите день, чтобы просмотреть расписание в этот день."
+        text += pick_day_to_check_timetable_text
     if as_message:
         await callback.message.answer(
             text=text,
@@ -304,7 +302,7 @@ async def _handle_time_add_or_edit(message: Message, edit_mode: bool = False, st
         slot_time = datetime.strptime(message.text, "%H:%M")
     except (ValueError, AssertionError) as err:
         logger.error(f"Unacceptable datetime. Details: {traceback.format_exception(err)}")
-        text = "Кажется, Вы ввели время не в том формате. Введите время в формате *ЧЧ:ММ*. Например, *13:30*."
+        text = wrong_time_format_text
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="Назад", callback_data=MasterConstants.BACK_TO_DAY)]]
         )
@@ -522,7 +520,7 @@ async def handle_edit_timetable_bulk(message: Message, state: FSMContext) -> Non
         slot_time = datetime.strptime(message.text, "%H:%M")
     except (ValueError, AssertionError) as err:
         logger.error(f"Unacceptable datetime. Details: {traceback.format_exception(err)}")
-        text = "Кажется, Вы ввели время не в том формате. Введите время в формате *ЧЧ:ММ*. Например, *13:30*."
+        text = wrong_time_format_text
         await state.set_state(Master.edit_timetable)
         await message.answer(text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
     else:
@@ -653,12 +651,9 @@ async def handle_edit_timetable(callback: CallbackQuery, state: FSMContext) -> N
         await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
     text = f"*{Config.MONTHS_MAP.get(current_month)[0]} {current_year}*"
     if edit_mode:
-        text += (
-            f"\nВыберите один или несколько дней и нажмите 'Добавить время'. Время будет добавлено ко всем выбранным "
-            f"дням."
-        )
+        text += pick_one_or_more_days_text
     else:
-        text += "\nВыберите день, чтобы просмотреть расписание в этот день."
+        text += pick_day_to_check_timetable_text
     pprint(calendar)
     await bot.edit_message_text(
         text=text,

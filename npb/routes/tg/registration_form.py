@@ -1,13 +1,12 @@
 import re
 from logging import Logger
-from typing import Union, Callable
+from typing import Union
 
 from aiogram import F
 from aiogram import Router
 from aiogram.enums import ParseMode
-from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.state import State
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardMarkup,
@@ -23,9 +22,17 @@ from npb.db.sa_models import user_table
 from npb.db.utils import WhereClause
 from npb.exceptions import NoTelegramUpdateObject
 from npb.logger import get_logger
-from npb.middlewares import HandlerInfoMiddleware
 from npb.state_machine.master_states import Master
 from npb.state_machine.registration_form_states import RegistrationForm
+from npb.text.registration_form import (
+    description_text,
+    instagram_text,
+    pick_service_to_delete_text,
+    pick_sub_service_text,
+    registration_almost_finished_text,
+    telegram_text,
+    what_do_you_want_to_change_text,
+)
 from npb.tg.bot import bot
 from npb.utils.common import (
     edit_profile_keyboard,
@@ -41,10 +48,8 @@ from npb.utils.tg.registration_form import (
     pick_service_keyboard,
 )
 
+
 registration_form_router = Router()
-
-
-# registration_form_router.message.outer_middleware(HandlerInfoMiddleware())
 
 
 async def _handle_edit_unrecognized(callback: CallbackQuery = None, message: Message = None):
@@ -113,7 +118,7 @@ async def _hande_service(
         comparison_operators=["=="]
     )
     picked_service = callback.data.lstrip("✅ ")
-    text = text or f"Пожалуйста, выберите предоставляемые Вами подуслуги для услуги {picked_service} из списка:"
+    text = text or pick_sub_service_text % picked_service
     if all_picked_services.get(picked_service) is None:
         all_picked_services[picked_service] = {}
     sub_services = Config.MASTER_SERVICES[picked_service]
@@ -139,7 +144,7 @@ async def _handle_start_edit_profile(
     message: Message = None,
     callback: CallbackQuery = None,
     update_current_message: bool = False,
-    text: str = "Что Вы хотите изменить?",
+    text: str = what_do_you_want_to_change_text,
 ) -> None:
     """
     Activates when client going to edit profile info.
@@ -193,12 +198,7 @@ async def _handle_phone_number(
         keyboard = None
     else:
         await state_obj.set_state(next_state)
-        text = text or (
-            "Пожалуйста, введите название вашего профиля в Instagram.\n"
-            f"Максимальная длина - {Config.USER_INSTAGRAM_MAX_LENGTH} символов.\n"
-            "Разрешено использовать *буквы латинского алфавита*, *цифры*, *знак нижнего подчеркивания (_)* и *точки (.)"
-            "*."
-        )
+        text = text or instagram_text
         where_clause = WhereClause(
             params=[user_table.c.telegram_id],
             values=[telegram_id],
@@ -235,11 +235,7 @@ async def _handle_start_edit_instagram_link(
     """
     if not callback and not message:
         raise NoTelegramUpdateObject("Neither callback nor message is specified.")
-    text = (
-        "Пожалуйста, введите название вашего профиля в Instagram.\n"
-        f"Максимальная длина - {Config.USER_INSTAGRAM_MAX_LENGTH} символов.\n"
-        "Разрешено использовать *буквы латинского алфавита*, *цифры*, *знак нижнего подчеркивания (_)* и *точки (.)*."
-    )
+    text = instagram_text
     if provide_hint:
         text += (
             "\nНазвание Вашего профиля Вы можете найти в шапке профиля в приложении Instagram."
@@ -290,12 +286,7 @@ async def _handle_instagram_link(
     )
     data_to_set = {"instagram_link": instagram_link}
     await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
-    text = text or (
-        "Пожалуйста, расскажите о себе в нескольких предложениях.\n"
-        f"Максимальная длина текста - {Config.USER_DESCRIPTION_MAX_LENGTH} символов.\n"
-        "Разрешено использовать *буквы*, *цифры*, *знак пробел* и *знаки -.,!?:)(*.\n"
-        "Пример: Привет! Меня зовут Катя. Я профессионально занимаюсь маникюром и педикюром."
-    )
+    text = text or description_text
     await message.answer(text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
 
 
@@ -309,12 +300,7 @@ async def _handle_start_edit_description(
     """
     if not callback and not message:
         raise NoTelegramUpdateObject("Neither callback nor message is specified.")
-    text = (
-        "Пожалуйста, расскажите о себе в нескольких предложениях.\n"
-        f"Максимальная длина текста - {Config.USER_DESCRIPTION_MAX_LENGTH} символов.\n"
-        "Разрешено использовать *буквы*, *цифры*, *знак пробел* и *знаки -.,!?:)(*.\n"
-        "Пример: Привет! Меня зовут Катя. Я профессионально занимаюсь маникюром и педикюром."
-    )
+    text = description_text
     if callback:
         await callback.message.answer(text=text, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard)
     else:
@@ -353,10 +339,7 @@ async def _handle_description(
         )
         telegram_profile_specified = await User(engine=engine, logger=logger).read_user_info(where_clause=where_clause)
         if not telegram_profile_specified:
-            text = (
-                "Пожалуйста, введите название вашего профиля в Telegram (его можно увидеть в разделе 'Настройки' -> "
-                "'Мой профиль' -> 'Имя Пользователя'). Или нажмите на кнопку 'Пропустить'."
-            )
+            text = telegram_text
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[[InlineKeyboardButton(text="Пропустить", callback_data=RegistrationConstants.SKIP)]]
             )
@@ -423,10 +406,7 @@ async def _handle_start_edit_telegram_profile(
     text: str = None,
     keyboard: Union[InlineKeyboardMarkup, ReplyKeyboardMarkup] = None,
 ):
-    text = text or (
-        "Пожалуйста, введите название вашего профиля в Telegram (его можно увидеть в разделе 'Настройки' -> "
-        "'Мой профиль' -> 'Имя Пользователя')."
-    )
+    text = text or telegram_text
     await callback.message.answer(text=text, reply_markup=keyboard)
 
 
@@ -455,7 +435,7 @@ async def _handle_telegram_profile(
         keyboard = None
     else:
         await state_obj.set_state(next_state)
-        text = text or "Ваша регистрация почти окончена! Хотите что-нибудь изменить?"
+        text = text or registration_almost_finished_text
         where_clause = WhereClause(
             params=[user_table.c.telegram_id], values=[telegram_id], comparison_operators=["=="]
         )
@@ -519,7 +499,7 @@ async def _handle_sub_service(callback: CallbackQuery, client_picks: bool = Fals
     if client_picks:
         text = f"Пожалуйста, выберите подуслуги для услуги {picked_service} из списка:"
     else:
-        text = f"Пожалуйста, выберите предоставляемые Вами подуслуги для услуги {picked_service} из списка:"
+        text = pick_sub_service_text % picked_service
     await bot.edit_message_text(
         text=text,
         chat_id=callback.message.chat.id,
@@ -539,7 +519,7 @@ async def handle_name_edit(message: Message, state: FSMContext) -> None:
     logger = get_logger()
     log_handler_info(handler_name="reg_form.handle_name_edit", logger=logger, message_text=message.text)
     telegram_id = str(message.chat.id)
-    text = "Что Вы хотите изменить?"
+    text = what_do_you_want_to_change_text
     keyboard = edit_profile_keyboard()
     await _handle_name(
         telegram_id=telegram_id,
@@ -584,7 +564,7 @@ async def handle_service_done(callback: CallbackQuery, state: FSMContext) -> Non
     edit_mode = await get_user_data(telegram_id=telegram_id, logger=logger, engine=engine, param="edit_mode")
     if edit_mode == CommonConstants.EDIT_SERVICE:
         await state.set_state(RegistrationForm.edit)
-        text = "Что Вы хотите изменить?"
+        text = what_do_you_want_to_change_text
         keyboard = edit_profile_keyboard()
         await callback.message.answer(text=text, reply_markup=keyboard)
     else:
@@ -602,7 +582,7 @@ async def handle_service_delete_start(callback: CallbackQuery, state: FSMContext
     telegram_id = str(callback.message.chat.id)
     services = list(Config.MASTER_SERVICES.keys())
     all_picked_services = await get_user_data(telegram_id=telegram_id, logger=logger, engine=engine, param="services")
-    text = "Выберите услугу для удаления:"
+    text = pick_service_to_delete_text
     keyboard = delete_service_keyboard(services, all_picked_services)
     await state.set_state(RegistrationForm.edit_service)
     await bot.edit_message_text(
@@ -644,7 +624,7 @@ async def handle_service_delete(callback: CallbackQuery, state: FSMContext) -> N
         update_current_message = False
         text = "Невыбранная услуга не может быть удалена."
     else:
-        text = "Выберите услугу для удаления:"
+        text = pick_service_to_delete_text
         where_clause = WhereClause(
             params=[user_table.c.telegram_id],
             values=[telegram_id],
@@ -714,11 +694,7 @@ async def handle_phone_number(message: Message, state: FSMContext) -> None:
     logger = get_logger()
     log_handler_info(handler_name="reg_form.handle_phone_number", logger=logger, message_text=message.text)
     telegram_id = str(message.chat.id)
-    text = (
-        "Пожалуйста, введите название вашего профиля в Instagram.\n"
-        f"Максимальная длина - {Config.USER_INSTAGRAM_MAX_LENGTH} символов.\n"
-        "Разрешено использовать *буквы латинского алфавита*, *цифры*, *знак нижнего подчеркивания (_)* и *точки (.)*."
-    )
+    text = instagram_text
     await _handle_phone_number(
         telegram_id=telegram_id,
         logger=logger,
@@ -740,7 +716,7 @@ async def handle_phone_number_edit(message: Message, state: FSMContext) -> None:
     logger = get_logger()
     log_handler_info(handler_name="reg_form.handle_phone_number_edit", logger=logger, message_text=message.text)
     telegram_id = str(message.chat.id)
-    text = "Что Вы хотите изменить?"
+    text = what_do_you_want_to_change_text
     keyboard = edit_profile_keyboard()
     await _handle_phone_number(
         telegram_id=telegram_id,
@@ -763,12 +739,7 @@ async def handle_instagram_link_skip(callback: CallbackQuery, state: FSMContext)
     """
     logger = get_logger()
     log_handler_info(handler_name="reg_form.handle_instagram_link_skip", logger=logger, callback_data=callback.data)
-    text = (
-        "Пожалуйста, расскажите о себе в нескольких предложениях.\n"
-        f"Максимальная длина текста - {Config.USER_DESCRIPTION_MAX_LENGTH} символов.\n"
-        "Разрешено использовать *буквы*, *цифры*, *знак пробел* и *знаки -.,!?:)(*.\n"
-        "Пример: Привет! Меня зовут Катя. Я профессионально занимаюсь маникюром и педикюром."
-    )
+    text = description_text
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="Пропустить", callback_data=RegistrationConstants.SKIP)]]
     )
@@ -811,7 +782,7 @@ async def handle_instagram_link_edit(message: Message, state: FSMContext) -> Non
     logger = get_logger()
     log_handler_info(handler_name="reg_form.handle_instagram_link_edit", logger=logger, message_text=message.text)
     telegram_id = str(message.chat.id)
-    text = "Что Вы хотите изменить?"
+    text = what_do_you_want_to_change_text
     keyboard = edit_profile_keyboard()
     await _handle_instagram_link(
         telegram_id=telegram_id,
@@ -842,16 +813,13 @@ async def handle_description_skip(callback: CallbackQuery, state: FSMContext) ->
     )
     telegram_profile_specified = await User(engine=engine, logger=logger).read_user_info(where_clause=where_clause)
     if not telegram_profile_specified:
-        text = (
-            "Пожалуйста, введите название вашего профиля в Telegram (его можно увидеть в разделе 'Настройки' -> "
-            "'Мой профиль' -> 'Имя Пользователя'). Или нажмите на кнопку 'Пропустить'."
-        )
+        text = telegram_text
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="Пропустить", callback_data=RegistrationConstants.SKIP)]]
         )
         next_state = RegistrationForm.telegram_profile
     else:
-        text = "Ваша регистрация почти окончена! Хотите что-нибудь изменить?"
+        text = registration_almost_finished_text
         keyboard = edit_profile_keyboard()
         next_state = RegistrationForm.edit
     await state.set_state(next_state)
@@ -869,7 +837,7 @@ async def handle_description(message: Message, state: FSMContext) -> None:
     logger = get_logger()
     log_handler_info(handler_name="reg_form.handle_description", logger=logger, message_text=message.text)
     telegram_id = str(message.chat.id)
-    text = "Ваша регистрация почти окончена! Хотите что-нибудь изменить?"
+    text = registration_almost_finished_text
     keyboard = edit_profile_keyboard()
     await _handle_description(
         telegram_id=telegram_id,
@@ -893,7 +861,7 @@ async def handle_description_edit(message: Message, state: FSMContext) -> None:
     logger = get_logger()
     log_handler_info(handler_name="reg_form.handle_description_edit", logger=logger, message_text=message.text)
     telegram_id = str(message.chat.id)
-    text = "Что Вы хотите изменить?"
+    text = what_do_you_want_to_change_text
     keyboard = edit_profile_keyboard()
     await _handle_description(
         telegram_id=telegram_id,
@@ -954,7 +922,7 @@ async def handle_telegram_profile_edit(message: Message, state: FSMContext) -> N
     logger = get_logger()
     log_handler_info(handler_name="reg_form.handle_telegram_profile_edit", logger=logger, message_text=message.text)
     telegram_id = str(message.chat.id)
-    text = "Что Вы хотите изменить?"
+    text = what_do_you_want_to_change_text
     keyboard = edit_profile_keyboard()
     await _handle_telegram_profile(
         telegram_id=telegram_id,

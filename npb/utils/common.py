@@ -22,7 +22,7 @@ from npb.exceptions import UserNotFound, UserParamNotFound, NoTelegramUpdateObje
 from npb.logger import get_logger
 from npb.config import MasterConstants
 from npb.exceptions import CalendarError
-from npb.text import bp
+from npb.text.registration_form import bp
 from npb.tg.bot import bot
 from npb.exceptions import CouldNotNotify
 
