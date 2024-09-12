@@ -1,40 +1,29 @@
 from aiogram import Router
-from aiogram import F
-from aiogram.filters import Command
-from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import (
+    CallbackQuery,
+    Message,
+)
 
 from npb.config import Config
 from npb.db.api import User
 from npb.db.core import engine
+from npb.db.sa_models import user_table
+from npb.db.utils import WhereClause
+from npb.exceptions import NoTelegramUpdateObject
 from npb.logger import get_logger
-from npb.tg.models import UserModel
 from npb.state_machine.client_states import Client
 from npb.state_machine.master_states import Master
 from npb.state_machine.registration_form_states import RegistrationForm
-from npb.utils.tg.entry_point import client_profile_options_keyboard, master_profile_options_keyboard
-from npb.utils.tg.client import pick_single_service_keyboard
-from npb.db.utils import WhereClause
-from npb.db.sa_models import user_table
-
-from aiogram import F
-from aiogram import Router
-from aiogram.fsm.context import FSMContext
-from aiogram.types import (
-    CallbackQuery,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Message,
-)
 
 
 unrecognized_router = Router()
 
 
-@unrecognized_router.message()
-async def handle_non_recognized(message: Message) -> None:
+async def _handle_non_recognized(callback: CallbackQuery = None, message: Message = None) -> None:
+    if not callback and not message:
+        raise NoTelegramUpdateObject("Neither callback nor message is specified.")
     logger = get_logger()
-    telegram_id = str(message.chat.id)
+    telegram_id = str(message.chat.id) if message else str(callback.message.chat.id)
     user = await User(engine=engine, logger=logger).read_single_user_info(tg_user_id=telegram_id)
     data_to_set = {}
     if user.non_recogn_count > Config.NON_RECOGNIZED_LIMIT:
@@ -60,4 +49,17 @@ async def handle_non_recognized(message: Message) -> None:
         data_to_set["non_recogn_count"] = user.non_recogn_count + 1
 
         await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
-    await message.answer(text=text)
+    if message:
+        await message.answer(text=text)
+    else:
+        await callback.message.answer(text=text)
+
+
+@unrecognized_router.message()
+async def handle_non_recognized(message: Message) -> None:
+    await _handle_non_recognized(message=message)
+
+
+@unrecognized_router.callback_query()
+async def handle_non_recognized(callback: CallbackQuery) -> None:
+    await _handle_non_recognized(callback=callback)
