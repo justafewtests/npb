@@ -10,10 +10,12 @@ from npb.db.api import User
 from npb.db.core import engine
 from npb.logger import get_logger
 from npb.state_machine.admin_states import Admin
+from npb.text.registration_form import bp
 from npb.tg.models import UserModel
 from npb.state_machine.client_states import Client
 from npb.state_machine.master_states import Master
 from npb.state_machine.registration_form_states import RegistrationForm
+from npb.utils.common import log_handler_info
 from npb.utils.tg.entry_point import client_profile_options_keyboard, master_profile_options_keyboard, get_max_seq_id, \
     admin_profile_options_keyboard
 from npb.utils.tg.client import pick_single_service_keyboard
@@ -37,7 +39,7 @@ entry_point_router = Router()
 @entry_point_router.message(Command(commands=["start", "commands"]))
 async def command_start_handler(message: Message, state: FSMContext) -> None:
     """
-    Activates when /start.
+    Activates when /start or /commands.
     """
     logger = get_logger()
     telegram_id = str(message.chat.id)
@@ -115,3 +117,29 @@ async def client_handler(message: Message, state: FSMContext) -> None:
         reply_markup=keyboard
     )
 
+
+@entry_point_router.message(Command(commands=["help"]))
+async def command_help_handler(message: Message, state: FSMContext) -> None:
+    """
+    Activates when /help.
+    """
+    logger = get_logger()
+    log_handler_info(handler_name="entry.command_help_handler", logger=logger, message_text=message.text)
+    text = (
+        "Добро пожаловать! Я *NailProjectBot* и я помогаю *Мастерам* бьюти услуг и их *Клиентам* найти друг друга!\n\n"
+        "*Наши Клиенты могут:*\n"
+        f"*{bp}* Искать Мастеров с использованием фильтра по предоставляемым услугам\n"
+        f"*{bp}* Просматривать расписание Мастеров\n"
+        f"*{bp}* Записываться на удобное время через календарь\n"
+        f"*{bp}* Получать напоминания о предстоящих записях\n"
+        f"*{bp}* Отменять запись при необходимости\n\n"
+        "*Наши Мастера могут:*\n"
+        f"*{bp}* Составлять график работ через календарь на месяцы вперед\n"
+        f"*{bp}* Автоматически получать уведомления о новых записях\n"
+        f"*{bp}* Вносить изменения в график (с автоматическим уведомлением Клиентов о смене времени)\n"
+        f"*{bp}* Отменять записи при необходимости (с автоматическим уведомлением Клиентов об отмене записи)\n"
+        f"*{bp}* Отменять записи при необходимости (с автоматическим уведомлением Клиентов об отмене записи)\n\n"
+        "Чтобы увидеть список доступных вам команд, нажмите на кнопку *Menu* в левом нижнем углу экрана и нажмите на "
+        "кнопку *commands*."
+    )
+    await message.answer(text=text, parse_mode=ParseMode.MARKDOWN)
