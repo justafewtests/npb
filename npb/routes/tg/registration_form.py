@@ -61,7 +61,7 @@ async def _handle_edit_unrecognized(callback: CallbackQuery = None, message: Mes
     if not callback and not message:
         raise NoTelegramUpdateObject("Neither callback nor message is specified.")
     text = (
-        "Извините, я Вас не понял.\nВы находитесь в разделе редактирования профиля. Вы можете отредактировать"
+        "Извините, я Вас не понял.\nВы находитесь в разделе редактирования профиля. Вы можете отредактировать "
         "информацию о себе нажав на соответствующую кнопку ниже. Чтобы завершить редактирование, нажмите"
         "кнопку 'Завершить'."
     )

@@ -18,7 +18,6 @@ class Config:
     TELEGRAM_WEBHOOK_PORT = int(environ.get("TELEGRAM_WEBHOOK_PORT", "443"))
     TELEGRAM_WEBHOOK_PATH = "/webhook"
     TELEGRAM_WEBHOOK_URL = f"https://{TELEGRAM_WEBHOOK_HOST}:{TELEGRAM_WEBHOOK_PORT}{TELEGRAM_WEBHOOK_PATH}"
-    TELEGRAM_WEBHOOK_URL = f"https://f508-178-91-106-8.ngrok-free.app/webhook"
     DB_DSN = environ.get("POSTGRES_DSN")
     MASTER_SERVICES = {
         "Ресницы": ["Удлинение", "Наращивание", "Ламинирование", "Биозавивка", "Коррекция", "Окрашивание"],

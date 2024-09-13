@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from logging import Logger
 from pprint import pprint
@@ -281,7 +282,7 @@ async def _handle_day_edit(callback: CallbackQuery, state: FSMContext) -> None:
     """
     text = "Пожалуйста, Введите время *начала сеанса* в формате *ЧЧ:ММ*. Например, *13:30*."
     keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="Назад", callback_data=MasterConstants.BACK_TO_DAY)]]
+        inline_keyboard=[[InlineKeyboardButton(text="Назад", callback_data=MasterConstants.BACK_TO_TIMETABLE)]]
     )
     await bot.edit_message_text(
         text=text,
@@ -336,7 +337,7 @@ async def _handle_time_add_or_edit(message: Message, edit_mode: bool = False, st
             logger.error(f"Error during appointment creation: {str(exc)}")
             text = (
                 f"Введенное время ({date_and_time.day} {Config.MONTHS_MAP[date_and_time.month][1]} "
-                f"{date_and_time.year} {date_and_time.hour}:{date_and_time.minute}) уже есть существует."
+                f"{date_and_time.year} {date_and_time.hour}:{date_and_time.minute}) уже существует."
                 f"Пожалуйста, введите другое время."
             )
         else:
@@ -523,8 +524,8 @@ async def handle_edit_timetable_bulk(message: Message, state: FSMContext) -> Non
     except (ValueError, AssertionError) as err:
         logger.error(f"Unacceptable datetime. Details: {traceback.format_exception(err)}")
         text = wrong_time_format_text
-        await state.set_state(Master.edit_timetable)
         await message.answer(text=text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
+        return
     else:
         current_calendar = user.current_calendar
         current_year = str(user.current_year)
@@ -574,6 +575,7 @@ async def handle_edit_timetable(callback: CallbackQuery, state: FSMContext) -> N
     current_month = user.current_month or datetime.now().month
     current_year = user.current_year or datetime.now().year
     data_to_set = {"current_month": current_month, "current_year": current_year}
+    current_calendar = {}
     if callback.data == MasterConstants.CALENDAR_IGNORE:
         await callback.answer("Невозможно выбрать эту дату.", reply_markup=user.current_calendar)
         return
@@ -605,7 +607,6 @@ async def handle_edit_timetable(callback: CallbackQuery, state: FSMContext) -> N
                 "current_calendar": current_calendar,
             }
         )
-        await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
     elif callback.data == MasterConstants.CALENDAR_MON_FRI or callback.data == MasterConstants.CALENDAR_WEEKEND:
         calendar, current_calendar = await edit_month_calendar(
             picked_month=current_month,
@@ -615,13 +616,11 @@ async def handle_edit_timetable(callback: CallbackQuery, state: FSMContext) -> N
             edit_mode=edit_mode,
         )
         data_to_set = {"current_calendar": current_calendar}
-        await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
     elif callback.data == MasterConstants.CALENDAR_WHOLE:
         calendar, current_calendar = await edit_month_calendar(
             picked_month=current_month, picked_year=current_year, current_calendar={}, whole=True, edit_mode=edit_mode,
         )
         data_to_set = {"current_calendar": current_calendar}
-        await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
     elif callback.data == MasterConstants.CALENDAR_DROP:
         # we use str() because JSON keys are stored as strings:
         print(f"DEBUG: ", user.current_calendar)
@@ -632,7 +631,6 @@ async def handle_edit_timetable(callback: CallbackQuery, state: FSMContext) -> N
             picked_month=current_month, picked_year=current_year, current_calendar={}, drop=True, edit_mode=edit_mode,
         )
         data_to_set = {"current_calendar": {}}
-        await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
     else:
         if not edit_mode:
             data_to_set.update({"current_day": int(callback.data), "state": Master.edit_day.state})
@@ -646,24 +644,37 @@ async def handle_edit_timetable(callback: CallbackQuery, state: FSMContext) -> N
             picked_day=callback.data,
             picked_month=current_month,
             picked_year=current_year,
-            current_calendar=user.current_calendar,
+            current_calendar=deepcopy(user.current_calendar),
             edit_mode=edit_mode,
         )
         data_to_set = {"current_calendar": current_calendar}
-        await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
-    text = f"*{Config.MONTHS_MAP.get(current_month)[0]} {current_year}*"
-    if edit_mode:
-        text += pick_one_or_more_days_text
+    if user.current_calendar == current_calendar:
+        del data_to_set["current_calendar"]  # update calendar only if it was changed
+        if data_to_set:
+            await User(engine=engine, logger=logger).update_user_info(
+                where_clause=where_clause,
+                data_to_set=data_to_set
+            )
+            # if calendar was the only thing to update and it did not change - do not update at all
+        await callback.answer(text="Вы уже выбрали эту опцию.")
     else:
-        text += pick_day_to_check_timetable_text
-    pprint(calendar)
-    await bot.edit_message_text(
-        text=text,
-        chat_id=callback.message.chat.id,
-        message_id=callback.message.message_id,
-        reply_markup=calendar,
-        parse_mode=ParseMode.MARKDOWN
-    )
+        await User(engine=engine, logger=logger).update_user_info(where_clause=where_clause, data_to_set=data_to_set)
+        text = f"*{Config.MONTHS_MAP.get(current_month)[0]} {current_year}*"
+        if edit_mode:
+            text += pick_one_or_more_days_text
+        else:
+            text += pick_day_to_check_timetable_text
+        pprint(calendar)
+        if user.current_calendar == current_calendar:
+            await callback.answer(text="Вы уже выбрали эту опцию.")
+        else:
+            await bot.edit_message_text(
+                text=text,
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id,
+                reply_markup=calendar,
+                parse_mode=ParseMode.MARKDOWN
+            )
 
 
 @master_router.callback_query(Master.edit_day, F.data == MasterConstants.CALENDAR_ADD_TIME)
@@ -797,17 +808,18 @@ async def handle_time_slot_delete(callback: CallbackQuery, state: FSMContext) ->
         ],
     )
     appointments_and_master_info = appointments_and_master_info[0]
-    master_info = _prepare_user_info(user=appointments_and_master_info)
-    notification_text = appointment_info(
-        date_and_time=appointments_and_master_info.datetime,
-        user_info=master_info,
-        service=appointments_and_master_info.service,
-        for_master=False,
-    )
-    notification_text = "Вашу запись отменили\n" + notification_text
-    await notify_user(
-        text=notification_text, telegram_id=appointments_and_master_info.client_telegram_id, logger=logger
-    )
+    if appointments_and_master_info.client_telegram_id:
+        master_info = _prepare_user_info(user=appointments_and_master_info)
+        notification_text = appointment_info(
+            date_and_time=appointments_and_master_info.datetime,
+            user_info=master_info,
+            service=appointments_and_master_info.service,
+            for_master=False,
+        )
+        notification_text = "Вашу запись отменили\n" + notification_text
+        await notify_user(
+            text=notification_text, telegram_id=appointments_and_master_info.client_telegram_id, logger=logger
+        )
     await Appointment(engine=engine, logger=logger).delete_appointment(auid=callback.data)
     await _handle_time_slot_delete(callback=callback, state=state)
 
