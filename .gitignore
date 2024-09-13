@@ -150,4 +150,4 @@ Thumbs.db
 # pycharm
 .idea/
 
-certs
+certs*
