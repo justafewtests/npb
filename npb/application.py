@@ -140,14 +140,14 @@ def create_app() -> FastAPI:
             logger.info(f"telegram webhook set to {Config.TELEGRAM_WEBHOOK_URL}")
         asyncio.create_task(periodic_task())
         # TODO: SetMyCommands and GetMyCommands triggers Telegram Flood Control
-        # my_commands = await bot.get_my_commands(language_code="ru")
-        # print("DEBUG my_commands: ", my_commands)
-        # if not my_commands:
-        #     commands = [
-        #         BotCommand(command="/commands", description="Список команд"),
-        #         BotCommand(command="/help", description="Помощь")
-        #     ]
-        #     await bot.set_my_commands(commands=commands, language_code="ru")
+        my_commands = await bot.get_my_commands(language_code="ru")
+        print("DEBUG my_commands: ", my_commands)
+        if not my_commands:
+            commands = [
+                BotCommand(command="/commands", description="Список команд"),
+                BotCommand(command="/help", description="Помощь")
+            ]
+            await bot.set_my_commands(commands=commands, language_code="ru")
 
     @web_app.on_event("shutdown")
     async def web_app_shutdown():
